@@ -316,7 +316,8 @@ function loadMetars(){
           (wkt!=null?('Wind '+(wdir!=null?Math.round(wdir):'VRB')+'° @ '+wkt+'kt  '):'')+
           (visM!=null?('Vis '+(visSM>=10?'10+':visSM.toFixed(1))+'sm'):'');
         stnMarkers[id].setIcon(stnIcon(id,CAT_COLOR[fc]));
-        stnMarkers[id].setPopupContent('<b>'+id+'</b><div class="metar-pop">'+decoded+'<hr style="border:none;border-top:1px solid #ccd;margin:5px 0">'+raw+'</div>');
+        var af=(typeof AIRPORTS!=='undefined')&&(AIRPORTS[id]||AIRPORTS['K'+id]); var fuelStr=af&&af[4]?('<br>Fuel: <b>'+af[4]+'</b>'):'';
+        stnMarkers[id].setPopupContent('<b>'+id+'</b><div class="metar-pop">'+decoded+fuelStr+'<hr style="border:none;border-top:1px solid #ccd;margin:5px 0">'+raw+'</div>');
       })
       .catch(function(){ clearTimeout(to);
         stnMarkers[id].setPopupContent('<b>'+id+'</b><br><span style="color:#888">METAR unavailable (retry ⟳)</span>');
@@ -593,5 +594,11 @@ applyFrame(NFRAMES-1);
 loadMetars();
 document.getElementById('clock').textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+' local';
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+window.PW_getState=function(){return {route:(document.getElementById('routein')||{}).value||'',aircraft:{windAlt:(document.getElementById('wind-alt')||{}).value}};};
+window.PW_applyState=function(s){ if(s.route){var ri=document.getElementById('routein'); if(ri)ri.value=s.route; if(typeof plotRoute==='function') plotRoute(s.route);} if(s.aircraft&&s.aircraft.windAlt){var wa=document.getElementById('wind-alt'); if(wa)wa.value=s.aircraft.windAlt;} };
+</script>
+<script src="/pwauth.js"></script>
 </body>
 </html>
