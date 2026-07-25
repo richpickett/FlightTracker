@@ -15,7 +15,18 @@
    '#pwacct .row a{color:#9bd1ff;cursor:pointer;text-decoration:none;font-weight:600} #pwacct .msg{color:#ffb14a;font-size:12px;margin:5px 0;min-height:14px}'+
    '#pwacct .muted{color:#8ea0b5;font-size:12px} #pwacct a.link{color:#9bd1ff;cursor:pointer}';
    document.head.appendChild(s);}
-  function msg(m){var e=$('#pwacct .msg'); if(e) e.textContent=m||'';}
+  function msg(m){ // write to the currently-visible .msg (signin vs signup vs routes); clear the hidden one
+    var els=document.querySelectorAll('#pwacct .msg');
+    for(var i=0;i<els.length;i++){ els[i].textContent = (els[i].offsetParent!==null) ? (m||'') : ''; }
+  }
+  function softErr(m){ m=m||'Something went wrong.';
+    var t=/after (\d+) seconds/i.exec(m);
+    if(t) return 'Please wait '+t[1]+'s before trying again — the server limits repeated email requests.';
+    if(/rate limit/i.test(m)) return 'Too many attempts just now — wait a moment and try again.';
+    if(/Email not confirmed/i.test(m)) return 'Confirm your email first — check your inbox for the link, then sign in.';
+    if(/Invalid login/i.test(m)) return 'Email or password is incorrect.';
+    return m;
+  }
 
   function render(){
     var p=$('#pwacct'); if(!p) return;
@@ -23,13 +34,15 @@
       p.innerHTML='<h4>Personal Wings — Sign in</h4>'+
         '<div id="pwsignin"><input id="pw-email" type="email" placeholder="email" autocomplete="email">'+
         '<input id="pw-pass" type="password" placeholder="password" autocomplete="current-password">'+
-        '<button id="pw-in">Sign in</button><button id="pw-showup" class="sec">Create account</button><div class="msg"></div></div>'+
+        '<button id="pw-in">Sign in</button><button id="pw-showup" class="sec">Create account</button>'+
+        '<div style="margin-top:4px"><a class="link" id="pw-forgot">Forgot password?</a></div>'+
+        '<div class="msg"></div></div>'+
         '<div id="pwsignup" style="display:none"><input id="pw-name" placeholder="full name">'+
         '<input id="pw-email2" type="email" placeholder="email"><input id="pw-pass2" type="password" placeholder="password (8+ chars)">'+
         '<button id="pw-up">Create account</button><button id="pw-showin" class="sec">Back to sign in</button><div class="msg"></div></div>';
-      $('#pw-in').onclick=signIn; $('#pw-up').onclick=signUp;
-      $('#pw-showup').onclick=function(){$('#pwsignin').style.display='none';$('#pwsignup').style.display='block';};
-      $('#pw-showin').onclick=function(){$('#pwsignup').style.display='none';$('#pwsignin').style.display='block';};
+      $('#pw-in').onclick=signIn; $('#pw-up').onclick=signUp; $('#pw-forgot').onclick=forgotPw;
+      $('#pw-showup').onclick=function(){$('#pwsignin').style.display='none';$('#pwsignup').style.display='block';msg('');};
+      $('#pw-showin').onclick=function(){$('#pwsignup').style.display='none';$('#pwsignin').style.display='block';msg('');};
     } else {
       p.innerHTML='<h4>My Routes</h4><div class="muted" id="pw-who"></div>'+
         '<input id="pw-rname" placeholder="name this route (e.g. KATW→BDU)">'+
@@ -43,12 +56,22 @@
   function toggle(){var p=$('#pwacct'); p.classList.toggle('open'); if(p.classList.contains('open')) render();}
 
   function signIn(){var e=$('#pw-email').value.trim(),pw=$('#pw-pass').value;
-    SB.auth.signInWithPassword({email:e,password:pw}).then(function(r){ if(r.error) msg(r.error.message); });}
+    if(!e||!pw){msg('Enter email and password.');return;}
+    msg('Signing in…');
+    SB.auth.signInWithPassword({email:e,password:pw}).then(function(r){ if(r.error) msg(softErr(r.error.message)); else msg(''); });}
   function signUp(){var n=$('#pw-name').value.trim(),e=$('#pw-email2').value.trim(),pw=$('#pw-pass2').value;
     if(!n){msg('Enter your name');return;}
-    SB.auth.signUp({email:e,password:pw,options:{data:{name:n}}}).then(function(r){
-      if(r.error){msg(r.error.message);return;}
-      msg(r.data.session?'Account created — you\'re in.':'Account created. Check your email to confirm, then sign in.');});}
+    if(!e||!pw){msg('Enter email and password.');return;}
+    msg('Creating account…');
+    SB.auth.signUp({email:e,password:pw,options:{data:{name:n},emailRedirectTo:location.origin}}).then(function(r){
+      if(r.error){msg(softErr(r.error.message));return;}
+      msg(r.data.session?'Account created — you\'re in.':'✓ Confirmation email sent to '+e+'. Open it, confirm, then come back and sign in.');});}
+  function forgotPw(){var e=$('#pw-email').value.trim();
+    if(!e){msg('Type your email above, then tap Forgot password.');return;}
+    msg('Sending reset link…');
+    SB.auth.resetPasswordForEmail(e,{redirectTo:location.origin}).then(function(r){
+      if(r.error){msg(softErr(r.error.message));return;}
+      msg('✓ Password-reset link sent to '+e+'. Check your inbox.');});}
   function signOut(){ SB.auth.signOut(); }
 
   function saveRoute(){
