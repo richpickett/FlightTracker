@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal Wings · Flight Operations</title>
+<style>
+  :root{ --bg:#0b1017; --panel:#121b28; --line:#26313f; --txt:#e8eef6; --dim:#93a4b8; --blue:#4aa3ff; --lblue:#9bd1ff; --amber:#ffb14a; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#12263f 0%,var(--bg) 55%);color:var(--txt);
+       font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;min-height:100vh}
+  .wrap{max-width:940px;margin:0 auto;padding:26px 20px 60px}
+  header{display:flex;align-items:center;gap:14px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+  .pw-name{font-size:15px;font-weight:800;letter-spacing:3px;color:var(--lblue);line-height:1}
+  .pw-sub{font-size:12px;color:var(--dim);margin-top:4px;max-width:520px}
+  h1{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:2px;margin:26px 0 12px;font-weight:700}
+  .card{display:block;text-decoration:none;color:inherit;background:var(--panel);border:1px solid var(--line);
+        border-radius:14px;padding:18px 20px;margin:12px 0;transition:border-color .15s,transform .15s}
+  .card:hover{border-color:var(--blue);transform:translateY(-1px)}
+  .card.primary{border-left:5px solid var(--amber)}
+  .card h2{margin:0 0 4px;font-size:17px;color:#eaf2fb}
+  .card p{margin:0;color:var(--dim);font-size:13px;line-height:1.5}
+  .pills{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+  .pill{font-size:11px;background:#182534;border:1px solid var(--line);color:var(--lblue);border-radius:20px;padding:2px 9px}
+  .go{float:right;color:var(--blue);font-size:13px;font-weight:600}
+  .status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);margin-top:6px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#5b6b7a;box-shadow:0 0 0 3px #5b6b7a22}
+  .dot.live{background:var(--amber);box-shadow:0 0 0 3px #ffb14a33;animation:p 2s infinite}
+  @keyframes p{50%{opacity:.4}}
+  .meta{color:#6f8095;font-size:12px}
+  footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);color:#6f8095;font-size:11px;line-height:1.6}
+  a.inline{color:var(--lblue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg width="52" height="30" viewBox="0 0 68 40" aria-label="Personal Wings">
+      <path d="M2 30 L30 18 L26 26 L46 16 L40 25 L66 12 L50 30 L34 26 L20 33 Z" fill="#4aa3ff"/>
+      <path d="M6 36 L34 24 L28 33 L54 20" fill="none" stroke="#9bd1ff" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <div class="pw-name">PERSONAL WINGS</div>
+      <div class="pw-sub">Flight Training &amp; Aircraft Brokerage — High-Performance, Turboprop &amp; Light Jet · San Diego</div>
+    </div>
+  </header>
+
+  <h1>Flight Operations</h1>
+
+  <a class="card primary" href="wx/">
+    <span class="go">Open →</span>
+    <h2>Enroute Weather &amp; Live Tracking</h2>
+    <p>N13709 round trip from San Diego (KMYF) — San Diego · Omaha · Appleton · Boulder and back. Animated radar, echo tops &amp; satellite (last 4 hrs), live METARs, winds aloft, and live ADS-B position with breadcrumb trail. <b>Current leg: KATW → Boulder via Y51 · KBUB · KOGA.</b></p>
+    <div class="status"><span class="dot" id="acdot"></span><span id="acstatus">Checking N13709 ADS-B…</span></div>
+    <div class="pills"><span class="pill">Radar</span><span class="pill">Echo Tops</span><span class="pill">Satellite</span><span class="pill">METAR</span><span class="pill">Winds aloft</span><span class="pill">ADS-B</span><span class="pill">GPS own-ship</span></div>
+  </a>
+
+  <a class="card" href="brief-katw-bdu.html">
+    <span class="go">Open →</span>
+    <h2>Flight Briefing — KATW → Boulder via Y51 · KBUB · KOGA (Fri 07/24)</h2>
+    <p>Legs + timeline, today's Nebraska fog/IFR lifting window, SPC Day-1 convection, AirVenture departure note, small-field fuel caveats, and the Boulder / KBJC arrival.</p>
+    <div class="pills"><span class="pill">Route</span><span class="pill">NE fog timing</span><span class="pill">SPC Day 1</span><span class="pill">AirVenture</span></div>
+  </a>
+
+  <footer>
+    Situational-awareness aid — not a substitute for an official 1800wxbrief / FSS briefing, TFR check, or W&amp;B. Data: Iowa Environmental Mesonet (radar/satellite), NCEP MRMS (echo tops), NWS (METAR), Open-Meteo (winds aloft), airplanes.live (ADS-B), OpenStreetMap.
+    <br>Personal Wings · <span id="stamp"></span>
+  </footer>
+</div>
+
+<script>
+document.getElementById('stamp').textContent='ops hub · '+new Date().toLocaleDateString();
+fetch('https://api.airplanes.live/v2/reg/N13709').then(function(r){return r.json();}).then(function(j){
+  var ac=(j.ac||[])[0], dot=document.getElementById('acdot'), s=document.getElementById('acstatus');
+  if(ac && ac.lat!=null && ac.alt_baro!=null && ac.alt_baro!=='ground'){
+    dot.className='dot live';
+    s.innerHTML='<b style="color:#ffb14a">N13709 airborne</b> · '+Math.round(ac.alt_baro).toLocaleString()+'′'+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'');
+  } else if(ac && ac.lat!=null){ dot.className='dot'; s.innerHTML='N13709 on ground / taxi'; }
+  else { dot.className='dot'; s.textContent='N13709 — no current ADS-B contact'; }
+}).catch(function(){ document.getElementById('acstatus').textContent='N13709 — ADS-B status unavailable'; });
+</script>
+</body>
+</html>
