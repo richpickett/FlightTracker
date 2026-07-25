@@ -2,12 +2,12 @@
    Requires @supabase/supabase-js (v2) loaded before this file, and a page that
    defines window.PW_getState() -> {route, aircraft} and window.PW_applyState(obj). */
 (function(){
-  var SB=null, USER=null, cfg={};
+  var SB=null, USER=null, cfg={}, TRIG=null;
   function $(s,r){return (r||document).querySelector(s);}
   function esc(s){return (s||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
   function style(){var s=document.createElement('style');s.textContent=
-   '#pwacct-btn{position:fixed;right:10px;bottom:10px;z-index:3000;background:#0b3d91;color:#fff;border:none;border-radius:20px;padding:8px 13px;font:600 13px system-ui;cursor:pointer;box-shadow:0 2px 8px #0006}'+
-   '#pwacct{position:fixed;right:10px;bottom:52px;z-index:3000;width:300px;max-width:92vw;background:#0f1720;color:#e8eef6;border:1px solid #26313f;border-radius:12px;padding:12px;box-shadow:0 10px 34px #0008;font:13px system-ui;display:none}'+
+   '#pwacct-btn{position:fixed;right:12px;top:12px;z-index:3000;background:#0b3d91;color:#fff;border:none;border-radius:20px;padding:8px 13px;font:600 13px system-ui;cursor:pointer;box-shadow:0 2px 8px #0006}'+
+   '#pwacct{position:fixed;right:12px;top:56px;z-index:3000;width:300px;max-width:92vw;background:#0f1720;color:#e8eef6;border:1px solid #26313f;border-radius:12px;padding:12px;box-shadow:0 10px 34px #0008;font:13px system-ui;display:none}'+
    '#pwacct.open{display:block} #pwacct h4{margin:0 0 8px;font-size:14px;color:#9bd1ff}'+
    '#pwacct input{width:100%;box-sizing:border-box;margin:4px 0;background:#0e1723;border:1px solid #26313f;color:#e8eef6;border-radius:7px;padding:8px}'+
    '#pwacct button{background:#0b3d91;color:#fff;border:none;border-radius:7px;padding:7px 10px;font:600 13px system-ui;cursor:pointer;margin:4px 4px 0 0}'+
@@ -93,16 +93,21 @@
 
   function boot(){
     style();
-    var btn=document.createElement('button'); btn.id='pwacct-btn'; btn.textContent='◔ Account'; btn.onclick=toggle; document.body.appendChild(btn);
+    // Use an in-page trigger if the page provides one (#pw-acct-slot); else float a pill top-right.
+    var slot=document.getElementById('pw-acct-slot');
+    if(slot){ TRIG=slot; TRIG.style.cursor='pointer'; }
+    else { TRIG=document.createElement('button'); TRIG.id='pwacct-btn'; document.body.appendChild(TRIG); }
+    TRIG.onclick=toggle;
     var pan=document.createElement('div'); pan.id='pwacct'; document.body.appendChild(pan);
+    window.PW_toggleAccount=toggle;
     fetch('/wx/wx-config.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
       cfg=j||{};
-      if(!cfg.supabaseUrl||!window.supabase){ btn.textContent='◔ Account (offline)'; return; }
+      if(!cfg.supabaseUrl||!window.supabase){ TRIG.textContent='👤 Account (offline)'; return; }
       SB=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
       SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); render(); });
       SB.auth.onAuthStateChange(function(_e,sess){ USER=sess?sess.user:null; upd(); render(); });
-    }).catch(function(){ btn.textContent='◔ Account (offline)'; });
+    }).catch(function(){ TRIG.textContent='👤 Account (offline)'; });
   }
-  function upd(){ var b=$('#pwacct-btn'); if(b) b.textContent= USER ? ('◉ '+((USER.user_metadata&&USER.user_metadata.name||USER.email).split('@')[0])) : '◔ Sign in'; }
+  function upd(){ if(TRIG) TRIG.textContent= USER ? ('◉ '+((USER.user_metadata&&USER.user_metadata.name||USER.email).split('@')[0])) : '👤 Sign in'; }
   if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded',boot);
 })();

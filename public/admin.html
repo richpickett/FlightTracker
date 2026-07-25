@@ -1,0 +1,84 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Personal Wings — Notify Users</title>
+<style>
+  :root{--blue:#0b3d91;--line:#d8e0ea}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,system-ui,sans-serif;color:#1a2230;background:#eef2f7}
+  .wrap{max-width:620px;margin:28px auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 22px 26px;box-shadow:0 6px 24px #0b3d9114}
+  h1{margin:0 0 2px;font-size:18px;color:var(--blue)}
+  .sub{color:#6b7889;font-size:13px;margin:0 0 18px}
+  label{display:block;font-weight:600;font-size:13px;margin:14px 0 4px}
+  input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font:14px system-ui;color:#1a2230}
+  textarea{min-height:150px;resize:vertical}
+  .row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1;min-width:220px}
+  button{margin-top:18px;background:var(--blue);color:#fff;border:none;border-radius:8px;padding:11px 16px;font:600 14px system-ui;cursor:pointer}
+  button.sec{background:#e7edf5;color:var(--blue)}
+  #out{margin-top:16px;font-size:13px;white-space:pre-wrap;border-radius:8px;padding:0}
+  #out.show{padding:12px}
+  .ok{background:#e7f6ec;color:#166534;border:1px solid #b7e2c4}
+  .err{background:#fdeaea;color:#9b1c1c;border:1px solid #f3c2c2}
+  .hint{color:#8a97a6;font-size:12px;margin-top:4px}
+  a.back{font-size:13px;color:var(--blue);text-decoration:none}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="back" href="/wx/">← Map</a>
+  <h1>Notify Users</h1>
+  <p class="sub">Emails everyone in your user directory via Postmark. Test on yourself first.</p>
+
+  <label>Admin key</label>
+  <input id="key" type="password" placeholder="ADMIN_KEY (set in Netlify env)" autocomplete="off">
+
+  <label>Subject</label>
+  <input id="subject" placeholder="e.g. New: share your live track by email">
+
+  <label>Message</label>
+  <textarea id="message" placeholder="Plain text. Blank lines start new paragraphs. A Personal Wings header and unsubscribe footer are added automatically."></textarea>
+
+  <div class="row">
+    <div>
+      <label>Send a test to just this address</label>
+      <input id="test" type="email" placeholder="you@personalwings.com">
+      <div class="hint">Leave blank to send to ALL users.</div>
+    </div>
+  </div>
+
+  <button id="count" class="sec">Count recipients (no send)</button>
+  <button id="sendtest" class="sec">Send test to me</button>
+  <button id="sendall">Send to all users</button>
+
+  <div id="out"></div>
+</div>
+<script>
+function $(id){return document.getElementById(id);}
+function show(cls,msg){var o=$('out');o.className='show '+cls;o.textContent=msg;}
+function send(mode){   // mode: 'count' | 'test' | 'all'
+  var key=$('key').value.trim(), subject=$('subject').value.trim(), message=$('message').value.trim(), test=$('test').value.trim();
+  if(!key){show('err','Enter the admin key.');return;}
+  var payload={subject:subject||'(dry run)',message:message||'(dry run)'};
+  if(mode==='count'){ payload.dryRun=true; }
+  else {
+    if(!subject||!message){show('err','Subject and message are required.');return;}
+    if(mode==='test'){ if(!test){show('err','Enter a test address first.');return;} payload.test=test; }
+    if(mode==='all' && !window.confirm('Send this to ALL users in the directory?')) return;
+  }
+  show('ok', mode==='count'?'Counting…':'Sending…');
+  fetch('/.netlify/functions/notify',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':key},body:JSON.stringify(payload)})
+    .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+    .then(function(res){
+      var j=res.j;
+      if(!res.ok){show('err','Error: '+(j.error||JSON.stringify(j)));return;}
+      if(j.dryRun){ show('ok','✓ Read your user directory OK.\nRecipients: '+j.recipients+(j.sample&&j.sample.length?'\nSample: '+j.sample.join(', '):'')+'\n\nNothing was sent.'); return; }
+      var m='Recipients: '+(j.recipients!=null?j.recipients:'?')+'\nSent: '+j.sent+'   Failed: '+j.failed+(j.test?'  (test)':'');
+      if(j.errors&&j.errors.length) m+='\n\nFirst errors:\n- '+j.errors.join('\n- ');
+      show(j.failed?'err':'ok',m);
+    })
+    .catch(function(e){show('err','Request failed: '+e);});
+}
+$('count').onclick=function(){send('count');};
+$('sendtest').onclick=function(){send('test');};
+$('sendall').onclick=function(){send('all');};
+</script>
+</body></html>
