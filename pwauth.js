@@ -7,13 +7,13 @@
   function esc(s){return (s||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
   function style(){var s=document.createElement('style');s.textContent=
    '#pwacct-btn{position:fixed;right:12px;top:12px;z-index:3000;background:#0b3d91;color:#fff;border:none;border-radius:20px;padding:8px 13px;font:600 13px system-ui;cursor:pointer;box-shadow:0 2px 8px #0006}'+
-   '#pwacct{position:fixed;right:12px;top:56px;z-index:3000;width:300px;max-width:92vw;background:#0f1720;color:#e8eef6;border:1px solid #26313f;border-radius:12px;padding:12px;box-shadow:0 10px 34px #0008;font:13px system-ui;display:none}'+
-   '#pwacct.open{display:block} #pwacct h4{margin:0 0 8px;font-size:14px;color:#9bd1ff}'+
-   '#pwacct input{width:100%;box-sizing:border-box;margin:4px 0;background:#0e1723;border:1px solid #26313f;color:#e8eef6;border-radius:7px;padding:8px}'+
+   '#pwacct{position:fixed;right:12px;top:56px;z-index:3000;width:300px;max-width:92vw;background:#fff;color:#1a2230;border:1px solid #d8e0ea;border-radius:12px;padding:12px;box-shadow:0 12px 34px #0b3d9126;font:13px system-ui;display:none}'+
+   '#pwacct.open{display:block} #pwacct h4{margin:0 0 8px;font-size:14px;color:#0b3d91}'+
+   '#pwacct input{width:100%;box-sizing:border-box;margin:4px 0;background:#f7faff;border:1px solid #d8e0ea;color:#1a2230;border-radius:7px;padding:8px}'+
    '#pwacct button{background:#0b3d91;color:#fff;border:none;border-radius:7px;padding:7px 10px;font:600 13px system-ui;cursor:pointer;margin:4px 4px 0 0}'+
-   '#pwacct button.sec{background:#1b2735;color:#cfe0f7} #pwacct .row{display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid #1a2430;padding:5px 0}'+
-   '#pwacct .row a{color:#9bd1ff;cursor:pointer;text-decoration:none;font-weight:600} #pwacct .msg{color:#ffb14a;font-size:12px;margin:5px 0;min-height:14px}'+
-   '#pwacct .muted{color:#8ea0b5;font-size:12px} #pwacct a.link{color:#9bd1ff;cursor:pointer}';
+   '#pwacct button.sec{background:#eef2f7;color:#0b3d91} #pwacct .row{display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid #eef2f7;padding:5px 0}'+
+   '#pwacct .row a{color:#0b3d91;cursor:pointer;text-decoration:none;font-weight:600} #pwacct .msg{color:#b45309;font-size:12px;margin:5px 0;min-height:14px}'+
+   '#pwacct .muted{color:#6b7889;font-size:12px} #pwacct a.link{color:#0b3d91;cursor:pointer}';
    document.head.appendChild(s);}
   function msg(m){ // write to the currently-visible .msg (signin vs signup vs routes); clear the hidden one
     var els=document.querySelectorAll('#pwacct .msg');
