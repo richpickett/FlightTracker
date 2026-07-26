@@ -37,8 +37,12 @@ async function getRecipients() {
   const url = (process.env.SUPABASE_URL || "https://dbkbigxeabzfzoqommtf.supabase.co").replace(/\/$/, "");
   const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE not set");
+  // Legacy service_role keys are JWTs (start with "ey") and want "Bearer <jwt>".
+  // New secret keys (sb_secret_...) are NOT JWTs; PostgREST requires the Authorization
+  // header to equal the apikey header exactly — no "Bearer " prefix.
+  const auth = /^ey/.test(key) ? "Bearer " + key : key;
   const r = await fetch(url + "/rest/v1/profiles?select=email,name", {
-    headers: { apikey: key, Authorization: "Bearer " + key },
+    headers: { apikey: key, Authorization: auth },
   });
   if (!r.ok) throw new Error("profiles read failed (" + r.status + "): " + (await r.text()).slice(0, 200));
   const rows = await r.json();
