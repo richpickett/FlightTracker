@@ -1,5 +1,6 @@
 {
   "tafProxy": "/.netlify/functions/taf",
+  "notamProxy": "/.netlify/functions/notam",
   "supabaseUrl": "https://dbkbigxeabzfzoqommtf.supabase.co",
   "supabaseKey": "sb_publishable_7BOSD_FB87NfHvyo78gD9g_fYpWfhIX"
 }
