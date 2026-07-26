@@ -123,13 +123,14 @@ function render(routeStr){
   h+='<div class="sub">'+depTxt+' · cruise <b>'+CR.toLocaleString()+'′</b> (~'+STATE.lv[2]+') · TAS '+TAS+' · '+USABLE+' gal / '+GPH+' gph · '+(pts.length-1)+' legs'+(miss.length?' · <span style="color:#c00">unknown: '+miss.join(', ')+'</span>':'')+'</div>';
   h+='<h2>Route</h2><div id="mapwrap"><div id="bmap"></div><div class="mapleg" id="mapleg"></div></div><div id="narr"></div><div id="ov"></div><h2>Legs</h2><div id="legsec"></div><div id="condsum"></div>';
   h+='<h2>Current conditions &amp; TAF</h2><div id="wx"></div>';
+  h+='<h2>NOTAMs</h2><div id="notams" class="sub">'+(CFG.notamProxy?'loading…':'Live NOTAMs not configured — use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a> or 1800wxbrief.')+'</div>';
   h+='<h2>Winds &amp; temps aloft</h2><div id="wind">loading…</div>';
   h+='<h2>Fuel &amp; services</h2><ul>'+pts.map(function(p){return '<li><b>'+p.id+'</b> — '+p.name+', '+(p.el!=null?p.el.toLocaleString()+"′":'—')+(p.fuel?' · <b style="color:#0b6b3a">'+p.fuel+'</b>':' · <span style="color:#889">fuel n/a</span>')+' · <a class="inline" href="https://www.airnav.com/airport/'+p.id+'" target="_blank">prices/FBO ↗</a></li>';}).join('')+'</ul><div class="sub">Fuel types from FAA data; prices/FBO via AirNav.</div>';
   h+='<h2>Notes</h2><ul><li>Legs wind-corrected at cruise level for the time you\'ll fly each (needs departure time; else current hour).</li><li>Small fields may lack weather, approaches, or fuel — confirm by phone.</li><li>Official TAFs/NOTAMs/TFRs &amp; filing: <a class="inline" href="https://www.1800wxbrief.com" target="_blank">1800wxbrief.com</a>.</li></ul>';
   h+='<div class="foot">Personal Wings · planning aid — not a substitute for a 1800wxbrief/FSS briefing, TFR/NOTAM check, W&amp;B, and DA/performance planning. METAR: NWS · TAF: metar-taf.com · winds: Open-Meteo · fuel/FBO: AirNav.</div>';
   out.innerHTML=h;
   buildMap(pts);
-  WINDARR=null; compute(); loadMetars(pts); loadWinds();
+  WINDARR=null; compute(); loadMetars(pts); loadWinds(); loadNotams(pts);
 }
 
 function legTimes(useWind){ // returns {gs:[],hr:[],burn:[],startMs:[],comp:[],wind:[]}
@@ -239,6 +240,28 @@ function loadMetars(pts){
         ml.innerHTML='<span class="badge" style="background:'+CC[fc]+'">'+fc+'</span> <b>'+p.id+'</b> <span style="color:#889">'+fmtAge(q.timestamp)+'</span><span class="raw">'+(q.rawMessage||'(no METAR)')+'</span>';
       }).catch(function(){cats[p.id]='NA';ml.innerHTML='<span class="badge" style="background:#8090a0">--</span> <b>'+p.id+'</b> <span style="color:#889">no METAR (small field)</span>';});
     if(CFG.tafProxy){fetch(CFG.tafProxy+(CFG.tafProxy.indexOf('?')<0?'?':'&')+'id='+encodeURIComponent(p.id)).then(function(r){return r.json();}).then(function(t){var raw=t&&t.taf&&t.taf.raw;if(raw)tl.textContent=raw;}).catch(function(){});}
+  });
+}
+function nesc(s){return String(s==null?'':s).replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
+function fmtNz(iso){if(!iso)return'';var d=new Date(iso);if(isNaN(d))return'';return pad(d.getUTCMonth()+1)+'/'+pad(d.getUTCDate())+' '+pad(d.getUTCHours())+pad(d.getUTCMinutes())+'Z';}
+function loadNotams(pts){
+  if(!CFG.notamProxy)return;
+  var box=document.getElementById('notams');if(!box)return;
+  box.className='';box.innerHTML='<div class="sub">⚠ Location NOTAMs only — not a substitute for a full official briefing. Confirm TFRs, FDC &amp; GPS NOTAMs at <a class="inline" href="https://www.1800wxbrief.com" target="_blank">1800wxbrief</a>.</div>';
+  var notCfg=false;
+  pts.forEach(function(p){
+    var blk=document.createElement('div');blk.className='wxrow';blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>';box.appendChild(blk);
+    fetch(CFG.notamProxy+'?id='+encodeURIComponent(p.id)).then(function(r){return r.json();}).then(function(j){
+      if(j.configured===false){ if(!notCfg){notCfg=true;box.innerHTML='<div class="sub">Live NOTAMs not configured yet — add FAA API credentials in Netlify, or use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a>.</div>';} return; }
+      if(j.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable ('+nesc(j.error)+')</span>'; return; }
+      var list=j.notams||[];
+      if(!list.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no current NOTAMs</span>'; return; }
+      var total=j.total||list.length, shown=list.slice(0,20);
+      var html='<b>'+p.id+'</b> <span style="color:#889">'+total+' NOTAM'+(total==1?'':'s')+'</span>';
+      html+=shown.map(function(n){var eff=fmtNz(n.start)+(n.end?'–'+fmtNz(n.end):'');return '<span class="raw">'+(eff?'['+eff+'] ':'')+nesc(n.text)+'</span>';}).join('');
+      if(total>shown.length) html+='<span class="sub">…'+(total-shown.length)+' more — see <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a></span>';
+      blk.innerHTML=html;
+    }).catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable</span>'; });
   });
 }
 function condSum(cats,pts){var bad=pts.filter(function(p){return cats[p.id]&&cats[p.id]!=='VFR'&&cats[p.id]!=='NA';}).map(function(p){return p.id+' '+cats[p.id];});
