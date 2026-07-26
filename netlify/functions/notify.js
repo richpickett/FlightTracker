@@ -44,7 +44,8 @@ async function getRecipients() {
   const r = await fetch(url + "/rest/v1/profiles?select=email,name", {
     headers: { apikey: key, Authorization: auth },
   });
-  if (!r.ok) throw new Error("profiles read failed (" + r.status + "): " + (await r.text()).slice(0, 200));
+  if (!r.ok) throw new Error("profiles read failed (" + r.status + "): " + (await r.text()).slice(0, 160) +
+    " [key " + key.slice(0, 7) + "…, auth=" + (/^ey/.test(key) ? "bearer-jwt" : "apikey-equal") + "]");
   const rows = await r.json();
   // de-dupe + drop blanks
   const seen = {}, out = [];
@@ -83,7 +84,10 @@ exports.handler = async (event) => {
   if (!subject || !message) return json(400, { error: "subject and message are required" });
 
   const From = process.env.POSTMARK_FROM;
-  const Stream = process.env.POSTMARK_STREAM || "broadcast";
+  // Test sends go through the transactional stream (approved first, no suppression surprises);
+  // real blasts use the broadcast stream.
+  const Stream = body.test ? (process.env.POSTMARK_TEST_STREAM || "outbound")
+                           : (process.env.POSTMARK_STREAM || "broadcast");
   const HtmlBody = toHtml(message);
   const TextBody = message;
 
