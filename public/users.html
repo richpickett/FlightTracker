@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Personal Wings — Users</title>
+<style>
+  :root{--blue:#0b3d91;--line:#d8e0ea}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,system-ui,sans-serif;color:#1a2230;background:#eef2f7}
+  .wrap{max-width:900px;margin:26px auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px 22px 26px;box-shadow:0 6px 24px #0b3d9114}
+  h1{margin:0 0 2px;font-size:18px;color:var(--blue)}
+  .sub{color:#6b7889;font-size:13px;margin:0 0 16px}
+  a.back{font-size:13px;color:var(--blue);text-decoration:none;margin-right:12px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
+  input{border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:14px system-ui}
+  #key{width:230px}#q{flex:1;min-width:180px}
+  button{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 14px;font:600 13px system-ui;cursor:pointer}
+  button.sec{background:#e7edf5;color:var(--blue)}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid #eef2f7}
+  th{color:#6b7889;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  tr:hover td{background:#f7faff}
+  .del{background:#fdeaea;color:#9b1c1c;border:1px solid #f3c2c2;border-radius:6px;padding:5px 9px;font:600 12px system-ui;cursor:pointer}
+  .muted{color:#8a97a6}
+  #msg{margin:10px 0;font-size:13px;padding:0}#msg.show{padding:10px;border-radius:8px}
+  .ok{background:#e7f6ec;color:#166534;border:1px solid #b7e2c4}
+  .err{background:#fdeaea;color:#9b1c1c;border:1px solid #f3c2c2}
+  .count{font-weight:700;color:var(--blue)}
+</style></head>
+<body>
+<div class="wrap">
+  <div><a class="back" href="/wx/">← Map</a><a class="back" href="/admin.html">Notify users →</a></div>
+  <h1>Users</h1>
+  <p class="sub">Your account directory. Delete removes the user and their saved routes permanently.</p>
+
+  <div class="bar">
+    <input id="key" type="password" placeholder="Admin key" autocomplete="off">
+    <button id="load">Load users</button>
+    <input id="q" placeholder="Filter by name or email">
+    <button id="csv" class="sec">Export CSV</button>
+  </div>
+  <div id="msg"></div>
+  <div id="summary" class="muted"></div>
+  <table id="tbl" style="display:none">
+    <thead><tr><th>Name</th><th>Email</th><th>Joined</th><th>Routes</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<script>
+function $(id){return document.getElementById(id);}
+var USERS=[];
+function show(cls,m){var e=$('msg');e.className='show '+cls;e.textContent=m;}
+function clearMsg(){var e=$('msg');e.className='';e.textContent='';}
+function fmtDate(s){ if(!s) return ''; var d=new Date(s); return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
+function esc(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+
+function api(payload){
+  var key=$('key').value.trim();
+  if(!key){show('err','Enter the admin key.');return Promise.reject();}
+  return fetch('/.netlify/functions/users',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':key},body:JSON.stringify(payload)})
+    .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;});});
+}
+function draw(){
+  var q=$('q').value.trim().toLowerCase();
+  var list=USERS.filter(function(u){return !q || (u.name+' '+u.email).toLowerCase().indexOf(q)>=0;});
+  $('summary').innerHTML='Showing <span class="count">'+list.length+'</span> of '+USERS.length+' users';
+  $('rows').innerHTML=list.map(function(u){
+    return '<tr><td>'+esc(u.name||'—')+'</td><td>'+esc(u.email)+'</td><td>'+fmtDate(u.created_at)+'</td><td>'+u.routes+'</td>'+
+      '<td style="text-align:right"><button class="del" data-id="'+esc(u.id)+'" data-em="'+esc(u.email)+'">Delete</button></td></tr>';
+  }).join('');
+  $('tbl').style.display=USERS.length?'table':'none';
+  Array.prototype.forEach.call(document.querySelectorAll('.del'),function(b){
+    b.onclick=function(){ var id=b.getAttribute('data-id'), em=b.getAttribute('data-em');
+      if(!window.confirm('Delete '+em+' and all their saved routes? This cannot be undone.')) return;
+      b.disabled=true; b.textContent='…';
+      api({action:'delete',id:id}).then(function(){ USERS=USERS.filter(function(x){return x.id!==id;}); draw(); show('ok','Deleted '+em); })
+        .catch(function(e){ if(e) show('err','Delete failed: '+e.message); b.disabled=false; b.textContent='Delete'; });
+    };
+  });
+}
+function load(){ clearMsg(); show('ok','Loading…'); api({action:'list'}).then(function(j){ USERS=j.users||[]; clearMsg(); draw(); })
+  .catch(function(e){ if(e) show('err','Error: '+e.message); }); }
+function csv(){
+  if(!USERS.length){show('err','Load users first.');return;}
+  var rows=[['name','email','joined','routes']].concat(USERS.map(function(u){return [u.name,u.email,u.created_at||'',u.routes];}));
+  var out=rows.map(function(r){return r.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+  var a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(out); a.download='personal-wings-users.csv'; a.click();
+}
+$('load').onclick=load; $('csv').onclick=csv; $('q').oninput=draw;
+$('key').addEventListener('keydown',function(e){if(e.key==='Enter')load();});
+</script>
+</body></html>

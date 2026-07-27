@@ -1,0 +1,90 @@
+# Personal Wings — Flight Ops System Overview
+
+_Reference for the whole app: what's live, where it lives, and how it fits together._
+_Last updated: 2026-07-26._
+
+## Live URLs
+
+- **App (map + tracking):** https://personalwings-ops.netlify.app/wx/
+- **Briefing page:** https://personalwings-ops.netlify.app/brief.html
+- **Ops hub / landing:** https://personalwings-ops.netlify.app/
+- **Admin — notify users:** https://personalwings-ops.netlify.app/admin.html
+- **Admin — manage users:** https://personalwings-ops.netlify.app/users.html
+- **Surge preview (staging):** https://personalwings-ops.surge.sh/
+- **Repo:** https://github.com/richpickett/FlightTracker  →  Netlify auto-deploys on push.
+
+## Pages
+
+| Page | File | What it does |
+|------|------|--------------|
+| Live map | `public/wx/index.html` | Route entry, radar/echo-tops/satellite (4 hr loop), METARs, winds aloft, live ADS-B for N13709, GPS own-ship, **Share** (link/email/text), **New route**, in-app briefing, account sign-in. |
+| Briefing | `public/brief.html` | Route-synced briefing: departure **date** + time, cruise altitude, wind-corrected legs, ETAs, fuel burn/reserve, METAR+TAF per field, winds/temps aloft, best-altitude, ISA-dev, fuel type per field, embedded map + SPC overlay. |
+| Account widget | `public/pwauth.js` | Loaded on map + briefing. Sign in / create account / forgot password, and per-user saved routes. Entry point is the **"👤 Sign in"** link in each page's header. |
+| Notify users | `public/admin.html` | Compose + send an email blast to all users. Count-recipients dry run, send-test-to-me, send-to-all. Admin-key gated. |
+| Manage users | `public/users.html` | List all users (name, email, joined, # routes), search, CSV export, delete (cascades routes). Admin-key gated. |
+
+## Backend (Netlify Functions)
+
+| Function | Purpose | Secrets used |
+|----------|---------|--------------|
+| `taf.js` | Proxies metar-taf.com TAFs (holds key server-side, adds CORS). | `METARTAF_KEY` |
+| `notam.js` | Proxies autorouter.aero NOTAMs per airport (OAuth client-credentials, token cached, adds CORS). Degrades to a NOTAM-search link if unset. | `AUTOROUTER_USER`, `AUTOROUTER_PASS` |
+| `notify.js` | Reads user directory, emails everyone via Postmark. Test sends → transactional stream; blasts → broadcast stream. | `ADMIN_KEY`, `POSTMARK_TOKEN`, `POSTMARK_FROM`, `POSTMARK_STREAM`, `SUPABASE_SERVICE_ROLE` |
+| `users.js` | List users (+ route counts) and delete a user. | `ADMIN_KEY`, `SUPABASE_SERVICE_ROLE` |
+
+`netlify.toml`: publish dir `public`, functions dir `netlify/functions`.
+
+## Data sources (all browser-CORS-safe)
+
+Radar/satellite: Iowa Environmental Mesonet + NASA GIBS (GOES-East Band13 IR). Echo tops: NCEP MRMS WMS. METARs: api.weather.gov (NWS). Winds/temps aloft: Open-Meteo. ADS-B: airplanes.live. Convective outlook: SPC Day-1 GeoJSON. Airport DB: OurAirports + FAA NASR fuel types (`public/wx/airports.json`). TAFs: metar-taf.com via the `taf` function.
+
+## Supabase (auth + database)
+
+- Project URL: `https://dbkbigxeabzfzoqommtf.supabase.co`
+- **Publishable key** (safe in client, in `wx-config.json`): `sb_publishable_7BOSD_...`
+- **Tables:** `profiles` (id, name, email, created_at) and `routes` (user_id, name, route, aircraft, updated_at). Both cascade-delete with the auth user. RLS: users see only their own rows.
+- A trigger auto-creates a `profiles` row on signup (captures name + email).
+- Auth emails (confirm / reset) send through **Postmark SMTP** (configured in the Supabase dashboard, not the repo).
+
+### Keys — the thing that bit us
+- **Client code** uses the **publishable** key (`sb_publishable_...`). Safe to expose.
+- **Server functions** use the **legacy `service_role` JWT** (starts `eyJ...`) as `SUPABASE_SERVICE_ROLE`. The new `sb_secret_...` keys do **not** reliably auth against the REST data API — use the legacy `eyJ...` service_role key. It bypasses RLS; keep it only in Netlify env vars, never in client code or the repo.
+
+## Postmark (email)
+
+- **Auth emails:** Supabase → SMTP settings. Host `smtp.postmarkapp.com`, port 587, **username + password both = the Postmark Server API Token** (not your account login). Sender = a verified Sender Signature (`no-reply@personalwings.com`).
+- **Notification blasts:** the `notify` function → Postmark API. Test = transactional stream; blast = `broadcast` stream (handles unsubscribe).
+
+## Netlify environment variables
+
+| Var | Value / source |
+|-----|----------------|
+| `METARTAF_KEY` | metar-taf.com API key |
+| `AUTOROUTER_USER` / `AUTOROUTER_PASS` | autorouter.aero account email + password (account must be API-enabled). Optional — NOTAMs show a search link until set. |
+| `ADMIN_KEY` | a long random string you chose — gate for admin.html / users.html |
+| `POSTMARK_TOKEN` | Postmark Server API Token |
+| `POSTMARK_FROM` | `no-reply@personalwings.com` (verified) |
+| `POSTMARK_STREAM` | `broadcast` |
+| `SUPABASE_URL` | `https://dbkbigxeabzfzoqommtf.supabase.co` |
+| `SUPABASE_SERVICE_ROLE` | **legacy `eyJ...` service_role JWT** |
+
+After changing any env var: **Deploys → Trigger deploy → Deploy site** (they don't apply to already-built functions).
+
+## Deploy workflow
+
+1. Edit files, push to `github.com/richpickett/FlightTracker`.
+2. Netlify builds + deploys automatically (~1–2 min).
+3. Surge (`personalwings-ops.surge.sh`) is a separate static staging preview — no functions run there, so account/email/admin features only work on Netlify.
+
+## Admin quick-start
+
+- **Notify:** open `/admin.html` → admin key → subject + message → **Send test to me** → **Send to all users**.
+- **Manage users:** open `/users.html` → admin key → **Load users** → search / **Export CSV** / delete.
+
+## Open items / ideas
+
+- ⚠️ **When moving to the custom domain (personalwings.com):** update Supabase → Authentication → URL Configuration — set **Site URL** to `https://personalwings.com` and add `https://personalwings.com/**` to **Redirect URLs**. Otherwise confirmation/reset emails will keep pointing at the netlify domain. (Rich asked to be reminded of this at move time.)
+- Optional: scheduled task to alert if the confirmation-email flow ever breaks.
+- Shared / team routes (currently routes are per-user).
+- Fuel pricing per field (needs an authorized data source).
+- Postmark account must be out of approval-pending for bulk sends to reach non-domain addresses.
