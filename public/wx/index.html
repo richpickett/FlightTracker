@@ -97,6 +97,8 @@
   .badge{display:inline-block;padding:1px 6px;border-radius:5px;color:#fff;font:700 11px/1.4 Arial;margin-bottom:3px}
   .barb{pointer-events:none;filter:drop-shadow(0 0 1.2px #fff) drop-shadow(0 0 1px #fff)}
   .ownship{filter:drop-shadow(0 0 3px #000)}
+  .ac-label{background:#0b3d91;color:#fff;border:none;border-radius:6px;font:700 11px system-ui;padding:2px 7px;box-shadow:0 1px 5px #0007;white-space:nowrap}
+  .ac-label:before{display:none}
   @keyframes pulse{0%{opacity:.9}50%{opacity:.35}100%{opacity:.9}}
   .os-acc{animation:pulse 2s infinite}
   @media (max-width:560px){ #legend{display:none} .tlabel{min-width:120px} }
@@ -182,7 +184,7 @@
     </label>
     <span id="wind-status" style="font-size:11px;color:var(--dim)"></span>
     <span style="flex:1"></span>
-    <div class="lyr"><input type="checkbox" id="c-adsb" checked><label for="c-adsb"><span class="sw" style="background:#ffb14a"></span>Track N13709</label></div>
+    <div class="lyr"><input type="checkbox" id="c-adsb" checked><label for="c-adsb"><span class="sw" style="background:#ffb14a"></span>Track</label><input id="regin" placeholder="N13709" title="Tail # to track (ADS-B)" autocomplete="off" spellcheck="false" style="width:80px;text-transform:uppercase;background:#f7faff;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px"></div>
     <label class="toggle"><input type="checkbox" id="follow-adsb"> follow ac</label>
     <button id="gps">◎ GPS</button>
     <label class="toggle"><input type="checkbox" id="follow"> me</label>
@@ -329,10 +331,28 @@ function loadMetars(){
         var af=(typeof AIRPORTS!=='undefined')&&(AIRPORTS[id]||AIRPORTS['K'+id]); var fuelStr=af&&af[4]?('<br>Fuel: <b>'+af[4]+'</b>'):'';
         stnMarkers[id].setPopupContent('<b>'+id+'</b><div class="metar-pop">'+decoded+fuelStr+'<hr style="border:none;border-top:1px solid #ccd;margin:5px 0">'+raw+'</div>');
       })
-      .catch(function(){ clearTimeout(to);
-        stnMarkers[id].setPopupContent('<b>'+id+'</b><br><span style="color:#888">METAR unavailable (retry ⟳)</span>');
-      });
+      .catch(function(){ clearTimeout(to); metarFallback(id); });
   });
+}
+// api.weather.gov misses many GA fields; aviationweather.gov aggregates more. Try it as a fallback.
+function metarFallback(id){
+  var m=stnMarkers[id]; if(!m) return;
+  fetch('https://aviationweather.gov/api/data/metar?ids='+encodeURIComponent(id)+'&format=json')
+    .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+    .then(function(a){
+      var o=a&&a[0]; if(!o||!o.rawOb) throw 0;
+      var visSM=(typeof o.visib==='number')?o.visib:(String(o.visib).indexOf('+')>=0?10:(parseFloat(o.visib)||99));
+      var ceil=99999; (o.clouds||[]).forEach(function(c){ if((c.cover==='BKN'||c.cover==='OVC'||c.cover==='VV')&&c.base!=null) ceil=Math.min(ceil,c.base); });
+      var fc=cat(visSM,ceil);
+      m.setIcon(stnIcon(id,CAT_COLOR[fc]));
+      var af=(typeof AIRPORTS!=='undefined')&&(AIRPORTS[id]||AIRPORTS['K'+id]); var fuelStr=af&&af[4]?('<br>Fuel: <b>'+af[4]+'</b>'):'';
+      var decoded='<span class="badge" style="background:'+CAT_COLOR[fc]+'">'+fc+'</span> '+
+        (o.temp!=null?('Temp '+Math.round(o.temp)+'°C  '):'')+(o.dewp!=null?('Dew '+Math.round(o.dewp)+'°C  '):'')+
+        (o.wspd!=null?('Wind '+(o.wdir!=null?o.wdir:'VRB')+'° @ '+o.wspd+'kt  '):'')+
+        ('Vis '+(visSM>=10?'10+':visSM)+'sm');
+      m.setPopupContent('<b>'+id+'</b><div class="metar-pop">'+decoded+fuelStr+'<hr style="border:none;border-top:1px solid #ccd;margin:5px 0">'+o.rawOb+'</div>');
+    })
+    .catch(function(){ m.setPopupContent('<b>'+id+'</b><br><span style="color:#888">no METAR (field not reporting)</span>'); });
 }
 
 // ---------- frame application ----------
@@ -466,7 +486,9 @@ document.getElementById('gps').addEventListener('click',function(){ if(watchId==
 document.getElementById('follow').addEventListener('change',function(e){ followOn=e.target.checked; if(followOn&&osMarker) map.panTo(osMarker.getLatLng()); });
 
 // ---------- live ADS-B position (airplanes.live, by registration) ----------
+var REG='', regExplicit=false;   // tail # to track; regExplicit = set via shared link or manual entry (beats profile default)
 var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsbTimer=null, adsbFollow=false;
+function resetAdsb(){ if(adsbMarker){adsbGroup.removeLayer(adsbMarker);adsbMarker=null;} if(adsbTrail){adsbGroup.removeLayer(adsbTrail);adsbTrail=null;} trailPts=[]; }
 function planeIcon(track,color){
   var rot=(track==null||isNaN(track))?0:track;
   return L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],
@@ -474,11 +496,13 @@ function planeIcon(track,color){
       '<path d="M17 2 L19.5 14 L31 20 L31 23 L19.5 19 L18.5 27 L23 30.5 L23 31.5 L17 29.5 L11 31.5 L11 30.5 L15.5 27 L14.5 19 L3 23 L3 20 L14.5 14 Z" fill="'+color+'" stroke="#3a2a00" stroke-width="0.8"/></g></svg>'});
 }
 function fetchADSB(){
-  fetch('https://api.airplanes.live/v2/reg/N13709').then(function(r){return r.json();}).then(function(j){
+  if(!REG){ var s0=document.getElementById('adsb-status'); if(s0) s0.textContent='Enter a tail # to track'; return; }
+  fetch('https://api.airplanes.live/v2/reg/'+encodeURIComponent(REG)).then(function(r){return r.json();}).then(function(j){
     var ac=(j.ac||[])[0], st=document.getElementById('adsb-status');
-    if(!ac || ac.lat==null){ if(st) st.textContent='N13709: no ADS-B contact (on ground / out of coverage)'; return; }
+    if(!ac || ac.lat==null){ if(st) st.textContent=REG+': no ADS-B contact (on ground / out of coverage)'; return; }
     var ll=[ac.lat,ac.lon];
-    if(!adsbMarker){ adsbMarker=L.marker(ll,{icon:planeIcon(ac.track,'#ffb14a'),zIndexOffset:1100}).addTo(adsbGroup).bindPopup('N13709'); }
+    if(!adsbMarker){ adsbMarker=L.marker(ll,{icon:planeIcon(ac.track,'#ffb14a'),zIndexOffset:1100}).addTo(adsbGroup).bindPopup(REG)
+      .bindTooltip('',{permanent:true,direction:'right',offset:[13,0],className:'ac-label'}); }
     else { adsbMarker.setLatLng(ll).setIcon(planeIcon(ac.track,'#ffb14a')); }
     var last=trailPts[trailPts.length-1];
     if(!last || last[0]!==ll[0] || last[1]!==ll[1]){ trailPts.push(ll); if(trailPts.length>500) trailPts.shift(); }
@@ -486,15 +510,33 @@ function fetchADSB(){
     var alt=ac.alt_baro==null?'—':(ac.alt_baro==='ground'?'GND':Math.round(ac.alt_baro).toLocaleString()+'′');
     var vs=ac.baro_rate==null?'':(' · '+(ac.baro_rate>=0?'+':'')+Math.round(ac.baro_rate)+' fpm');
     var age=ac.seen_pos!=null?Math.round(ac.seen_pos)+'s ago':'';
-    adsbMarker.setPopupContent('<b>N13709</b> ('+(ac.t||'')+')<br>'+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+'<br><span style="color:#888">'+age+'</span>');
-    if(st) st.innerHTML='<b style="color:#ffb14a">✈ N13709</b> '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+' <span style="color:#7f8fa0">('+age+')</span>';
+    adsbMarker.setPopupContent('<b>'+REG+'</b> ('+(ac.t||'')+')<br>'+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+'<br><span style="color:#888">'+age+'</span>');
+    if(st) st.innerHTML='<b style="color:#ffb14a">✈ '+REG+'</b> '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+' <span style="color:#7f8fa0">('+age+')</span>';
+    if(adsbMarker) adsbMarker.setTooltipContent(REG+' · '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':''));
     if(adsbFollow){ map.panTo(ll,{animate:false}); }
-  }).catch(function(){ var st=document.getElementById('adsb-status'); if(st) st.textContent='N13709: ADS-B feed unavailable'; });
+  }).catch(function(){ var st=document.getElementById('adsb-status'); if(st) st.textContent=REG+': ADS-B feed unavailable'; });
 }
 function startADSB(){ if(!map.hasLayer(adsbGroup)) adsbGroup.addTo(map); fetchADSB(); clearInterval(adsbTimer); adsbTimer=setInterval(fetchADSB,10000); }
 function stopADSB(){ clearInterval(adsbTimer); adsbTimer=null; if(map.hasLayer(adsbGroup)) map.removeLayer(adsbGroup); }
 document.getElementById('c-adsb').addEventListener('change',function(e){ if(e.target.checked) startADSB(); else stopADSB(); });
 document.getElementById('follow-adsb').addEventListener('change',function(e){ adsbFollow=e.target.checked; if(adsbFollow&&adsbMarker) map.panTo(adsbMarker.getLatLng()); });
+// change the tracked tail number
+function setReg(v,explicit){
+  v=(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  REG=v; if(explicit) regExplicit=true;
+  var ri=document.getElementById('regin'); if(ri && ri.value.toUpperCase()!==v) ri.value=v;
+  try{ if(v) localStorage.setItem('pw_reg',v); }catch(e){}
+  var lbl=v||'—';
+  var h1=document.querySelector('#hdr h1'); if(h1){ h1.innerHTML = (STATIONS&&STATIONS.length>1) ? (lbl+' · '+STATIONS.map(function(s){return s[0];}).join(' → ')) : (lbl+' · live tracking'); }
+  resetAdsb();
+  var st=document.getElementById('adsb-status'); if(st) st.textContent = v ? (v+': acquiring ADS-B…') : 'Enter a tail # to track';
+  try{ history.replaceState(null,'',shareURL()); }catch(e){}
+  if(v && map.hasLayer(adsbGroup)) fetchADSB();
+}
+// Per-user default pushed by the account widget; only applies if the user hasn't chosen a tail via link or by hand.
+window.PW_setReg=function(reg,opts){ opts=opts||{}; if(regExplicit && !opts.force) return; setReg(reg, !!opts.force); };
+document.getElementById('regin').addEventListener('change',function(){ setReg(this.value,true); });
+document.getElementById('regin').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); setReg(this.value,true); } });
 startADSB();
 
 // ---------- dynamic route entry + airport lookup ----------
@@ -504,8 +546,15 @@ fetch('airports.json').then(function(r){return r.json();}).then(function(j){ AIR
   var urlRoute=null; try{ urlRoute=new URLSearchParams(location.search).get('route'); }catch(e){}
   var initRoute = urlRoute || saved || (ROUTE.sun||[]).join(' ');
   if(ri) ri.value = initRoute;
+  // tracked tail number: URL ?reg= → saved → default
+  var urlReg=null,savedReg=null; try{ urlReg=new URLSearchParams(location.search).get('reg'); }catch(e){}
+  try{ savedReg=localStorage.getItem('pw_reg'); }catch(e){}
+  if(urlReg) regExplicit=true;   // shared link's tail wins over any profile default
+  REG=((urlReg||savedReg||'').toUpperCase().replace(/[^A-Z0-9]/g,''));
+  var rg=document.getElementById('regin'); if(rg) rg.value=REG;
   setRouteMsg(Object.keys(j).length.toLocaleString()+' US airports loaded');
   if(initRoute) plotRoute(initRoute);
+  resetAdsb(); if(map.hasLayer(adsbGroup)) fetchADSB();
 }).catch(function(){ setRouteMsg('airport DB failed to load'); });
 // optional config (TAF proxy URL etc.) — edit wx-config.json, no code change needed
 var CFG={};
@@ -527,10 +576,10 @@ function plotRoute(text){
   COORD={}; STATIONS.forEach(function(s){COORD[s[0]]=[s[1],s[2]];});
   ROUTE={sun:found.map(function(f){return f[0];}), tue:[]};
   try{ localStorage.setItem('pw_route', ROUTE.sun.join(' ')); }catch(e){}
-  try{ history.replaceState(null,'',location.pathname+'?route='+encodeURIComponent(ROUTE.sun.join(' '))); }catch(e){}
+  try{ var ri2=document.getElementById('routein'); if(ri2) ri2.value=ROUTE.sun.join(' '); history.replaceState(null,'',shareURL()); }catch(e){}
   redrawRoute();
   map.fitBounds(L.latLngBounds(found.map(function(f){return [f[1],f[2]];})),{padding:[70,70],maxZoom:9});
-  var h1=document.querySelector('#hdr h1'); if(h1) h1.innerHTML='N13709 · '+found.map(function(f){return f[0];}).join(' → ');
+  var h1=document.querySelector('#hdr h1'); if(h1) h1.innerHTML=REG+' · '+found.map(function(f){return f[0];}).join(' → ');
   loadMetars();
   setRouteMsg(missing.length?('plotted · unknown: '+missing.join(', ')):('plotted '+found.length+' fields'));
   if(document.getElementById('brief').classList.contains('open')) buildBriefing();
@@ -596,17 +645,17 @@ document.getElementById('routein').addEventListener('keydown',function(e){ if(e.
 
 // ---------- Share this live map ----------
 function shareURL(){
-  var rt=(document.getElementById('routein')||{}).value||'';
-  var u=location.origin+location.pathname;
-  if(rt.trim()) u+='?route='+encodeURIComponent(rt.trim().toUpperCase());
-  return u;
+  var rt=(document.getElementById('routein')||{}).value||'', q=[];
+  if(rt.trim()) q.push('route='+encodeURIComponent(rt.trim().toUpperCase()));
+  if(REG && REG!=='N13709') q.push('reg='+encodeURIComponent(REG));
+  return location.origin+location.pathname+(q.length?'?'+q.join('&'):'');
 }
 function shareToast(m){ var t=document.getElementById('pw-share-toast'); if(!t){t=document.createElement('div');t.id='pw-share-toast';document.body.appendChild(t);} t.textContent=m; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(function(){t.classList.remove('show');},2600); }
 function shareMap(){
   var url=shareURL();
   var rt=(document.getElementById('routein')||{}).value||'';
   var title='Personal Wings — live tracking'+(rt?(' · '+rt.trim().toUpperCase()):'');
-  var text='Track N13709 live'+(rt?(' on '+rt.trim().toUpperCase()):'')+' — weather + ADS-B position:';
+  var text='Track '+REG+' live'+(rt?(' on '+rt.trim().toUpperCase()):'')+' — weather + ADS-B position:';
   if(navigator.share){   // phones/tablets: native sheet = AirDrop, Messages, Mail, etc.
     navigator.share({title:title,text:text,url:url}).catch(function(){});
     return;
@@ -640,7 +689,7 @@ function newRoute(){
   try{ history.replaceState(null,'',location.pathname); }catch(e){}
   STATIONS=[]; COORD={}; ROUTE={sun:[],tue:[]};
   redrawRoute(); metarGroup.clearLayers();
-  var h1=document.querySelector('#hdr h1'); if(h1) h1.innerHTML='N13709 · new route';
+  var h1=document.querySelector('#hdr h1'); if(h1) h1.innerHTML=REG+' · new route';
   setRouteMsg('New route — type identifiers (e.g. KMYF KABQ) and press Plot');
   var b=document.getElementById('brief'); if(b&&b.classList.contains('open')) buildBriefing();
 }
@@ -661,8 +710,8 @@ document.getElementById('clock').textContent=new Date().toLocaleTimeString([], {
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-window.PW_getState=function(){return {route:(document.getElementById('routein')||{}).value||'',aircraft:{windAlt:(document.getElementById('wind-alt')||{}).value}};};
-window.PW_applyState=function(s){ if(s.route){var ri=document.getElementById('routein'); if(ri)ri.value=s.route; if(typeof plotRoute==='function') plotRoute(s.route);} if(s.aircraft&&s.aircraft.windAlt){var wa=document.getElementById('wind-alt'); if(wa)wa.value=s.aircraft.windAlt;} };
+window.PW_getState=function(){return {route:(document.getElementById('routein')||{}).value||'',aircraft:{windAlt:(document.getElementById('wind-alt')||{}).value,reg:REG}};};
+window.PW_applyState=function(s){ if(s.aircraft&&s.aircraft.reg&&typeof setReg==='function') setReg(s.aircraft.reg,true); if(s.route){var ri=document.getElementById('routein'); if(ri)ri.value=s.route; if(typeof plotRoute==='function') plotRoute(s.route);} if(s.aircraft&&s.aircraft.windAlt){var wa=document.getElementById('wind-alt'); if(wa)wa.value=s.aircraft.windAlt;} };
 </script>
 <script src="/pwauth.js"></script>
 </body>

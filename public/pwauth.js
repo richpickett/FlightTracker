@@ -2,7 +2,7 @@
    Requires @supabase/supabase-js (v2) loaded before this file, and a page that
    defines window.PW_getState() -> {route, aircraft} and window.PW_applyState(obj). */
 (function(){
-  var SB=null, USER=null, cfg={}, TRIG=null, RECOVERY=false;
+  var SB=null, USER=null, cfg={}, TRIG=null, RECOVERY=false, PROFILE={};
   function $(s,r){return (r||document).querySelector(s);}
   function esc(s){return (s||'').replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
   function style(){var s=document.createElement('style');s.textContent=
@@ -56,9 +56,13 @@
         '<input id="pw-rname" placeholder="name this route (e.g. KATW→BDU)">'+
         '<button id="pw-save">Save current route</button><div class="msg"></div>'+
         '<div id="pw-list" style="margin-top:6px"></div>'+
-        '<div style="margin-top:8px"><a class="link" id="pw-out">Sign out</a></div>';
+        '<div style="margin-top:10px;border-top:1px solid #eef2f7;padding-top:8px">'+
+          '<div class="muted" style="margin-bottom:2px">My default aircraft (tail #)</div>'+
+          '<div style="display:flex;gap:6px"><input id="pw-reg" placeholder="N123AB" style="text-transform:uppercase;flex:1;margin:0" value="'+esc(PROFILE.default_reg||'')+'"><button id="pw-regsave" class="sec" style="margin:0">Set</button></div>'+
+        '</div>'+
+        '<div style="margin-top:10px"><a class="link" id="pw-out">Sign out</a></div>';
       $('#pw-who').textContent=(USER.user_metadata&&USER.user_metadata.name?USER.user_metadata.name+' · ':'')+USER.email;
-      $('#pw-save').onclick=saveRoute; $('#pw-out').onclick=signOut; listRoutes();
+      $('#pw-save').onclick=saveRoute; $('#pw-out').onclick=signOut; $('#pw-regsave').onclick=saveDefaultReg; listRoutes();
     }
   }
   function toggle(){var p=$('#pwacct'); p.classList.toggle('open'); if(p.classList.contains('open')) render();}
@@ -80,7 +84,21 @@
     SB.auth.resetPasswordForEmail(e,{redirectTo:location.origin}).then(function(r){
       if(r.error){msg(softErr(r.error.message));return;}
       msg('✓ Password-reset link sent to '+e+'. Check your inbox.');});}
-  function signOut(){ RECOVERY=false; SB.auth.signOut(); }
+  function signOut(){ RECOVERY=false; PROFILE={}; SB.auth.signOut(); }
+  function fetchProfile(){ if(!USER) return;
+    SB.from('profiles').select('default_reg').eq('id',USER.id).single().then(function(r){
+      PROFILE=r.data||{};
+      var rr=$('#pw-reg'); if(rr) rr.value=PROFILE.default_reg||'';
+      if(PROFILE.default_reg && window.PW_setReg) window.PW_setReg(PROFILE.default_reg); // apply unless user chose a tail via link/field
+    }).catch(function(){});
+  }
+  function saveDefaultReg(){ if(!USER) return;
+    var v=($('#pw-reg').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    SB.from('profiles').update({default_reg:v}).eq('id',USER.id).then(function(r){
+      if(r.error){msg(r.error.message);return;}
+      PROFILE.default_reg=v; if(window.PW_setReg) window.PW_setReg(v,{force:true}); msg(v?('Default aircraft set to '+v):'Default aircraft cleared');
+    });
+  }
   function startRecovery(){ RECOVERY=true; var p=$('#pwacct'); if(p){ p.classList.add('open'); } render(); }
   function setNewPass(){
     var a=$('#pw-newpass').value, b=$('#pw-newpass2').value;
@@ -106,7 +124,11 @@
       if(!r.data.length){box.innerHTML='<span class="muted">No saved routes yet.</span>';return;}
       box.innerHTML=r.data.map(function(row){return '<div class="row"><a data-load="'+row.id+'" title="'+esc(row.route)+'">'+esc(row.name)+'</a>'+
         '<span><a data-del="'+row.id+'" class="link">✕</a></span></div>';}).join('');
-      Array.prototype.forEach.call(box.querySelectorAll('[data-load]'),function(a){a.onclick=function(){var row=r.data.filter(function(x){return x.id==a.getAttribute('data-load');})[0]; if(row&&window.PW_applyState) window.PW_applyState(row); msg('Loaded '+row.name);};});
+      Array.prototype.forEach.call(box.querySelectorAll('[data-load]'),function(a){a.onclick=function(){
+        var row=r.data.filter(function(x){return x.id==a.getAttribute('data-load');})[0]; if(!row) return;
+        if(window.PW_applyState){ window.PW_applyState(row); msg('Loaded '+row.name); }
+        else { location.href='/wx/?route='+encodeURIComponent(row.route||''); } // no map on this page → open the map with it
+      };});
       Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),function(a){a.onclick=function(){SB.from('routes').delete().eq('id',a.getAttribute('data-del')).then(function(){listRoutes();});};});
     });}
 
@@ -125,8 +147,8 @@
       cfg=j||{};
       if(!cfg.supabaseUrl||!window.supabase){ TRIG.textContent='👤 Account (offline)'; return; }
       SB=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
-      SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); if(wantRecovery){ startRecovery(); } else { render(); } });
-      SB.auth.onAuthStateChange(function(ev,sess){ USER=sess?sess.user:null; upd(); if(ev==='PASSWORD_RECOVERY'){ startRecovery(); } else if(!RECOVERY){ render(); } });
+      SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); if(wantRecovery){ startRecovery(); } else { render(); } if(USER) fetchProfile(); });
+      SB.auth.onAuthStateChange(function(ev,sess){ USER=sess?sess.user:null; upd(); if(ev==='PASSWORD_RECOVERY'){ startRecovery(); } else if(!RECOVERY){ render(); } if(USER) fetchProfile(); });
     }).catch(function(){ TRIG.textContent='👤 Account (offline)'; });
   }
   function upd(){ if(TRIG) TRIG.textContent= USER ? ('◉ '+((USER.user_metadata&&USER.user_metadata.name||USER.email).split('@')[0])) : '👤 Sign in'; }
