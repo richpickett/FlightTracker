@@ -28,6 +28,8 @@ _Last updated: 2026-07-26._
 | Function | Purpose | Secrets used |
 |----------|---------|--------------|
 | `taf.js` | Proxies metar-taf.com TAFs (holds key server-side, adds CORS). | `METARTAF_KEY` |
+| `metar.js` | Proxies aviationweather.gov METARs (adds CORS) — fallback for fields the NWS API returns empty. | — |
+| `food.js` | Proxies OpenStreetMap Overpass for nearby restaurants (adds CORS, server-side). | — |
 | `notam.js` | Proxies autorouter.aero NOTAMs per airport (OAuth client-credentials, token cached, adds CORS). Degrades to a NOTAM-search link if unset. | `AUTOROUTER_USER`, `AUTOROUTER_PASS` |
 | `notify.js` | Reads user directory, emails everyone via Postmark. Test sends → transactional stream; blasts → broadcast stream. Admin-only (login + `is_admin`). | `POSTMARK_TOKEN`, `POSTMARK_FROM`, `POSTMARK_STREAM`, `SUPABASE_SERVICE_ROLE` |
 | `users.js` | List users (+ route counts), delete a user, toggle admin. Admin-only (login + `is_admin`). | `SUPABASE_SERVICE_ROLE` |

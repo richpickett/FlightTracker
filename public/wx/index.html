@@ -337,7 +337,7 @@ function loadMetars(){
 // api.weather.gov misses many GA fields; aviationweather.gov aggregates more. Try it as a fallback.
 function metarFallback(id){
   var m=stnMarkers[id]; if(!m) return;
-  fetch('https://aviationweather.gov/api/data/metar?ids='+encodeURIComponent(id)+'&format=json')
+  fetch('/.netlify/functions/metar?id='+encodeURIComponent(id))
     .then(function(r){ if(!r.ok) throw 0; return r.json(); })
     .then(function(a){
       var o=a&&a[0]; if(!o||!o.rawOb) throw 0;
