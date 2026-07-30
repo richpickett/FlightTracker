@@ -126,11 +126,38 @@ function render(routeStr){
   h+='<h2>NOTAMs</h2><div id="notams" class="sub">'+(CFG.notamProxy?'loading…':'Live NOTAMs not configured — use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a> or 1800wxbrief.')+'</div>';
   h+='<h2>Winds &amp; temps aloft</h2><div id="wind">loading…</div>';
   h+='<h2>Fuel &amp; services</h2><ul>'+pts.map(function(p){return '<li><b>'+p.id+'</b> — '+p.name+', '+(p.el!=null?p.el.toLocaleString()+"′":'—')+(p.fuel?' · <b style="color:#0b6b3a">'+p.fuel+'</b>':' · <span style="color:#889">fuel n/a</span>')+' · <a class="inline" href="https://www.airnav.com/airport/'+p.id+'" target="_blank">prices/FBO ↗</a></li>';}).join('')+'</ul><div class="sub">Fuel types from FAA data; prices/FBO via AirNav.</div>';
+  h+='<h2>Food nearby</h2><div id="food" class="sub">loading…</div>';
   h+='<h2>Notes</h2><ul><li>Legs wind-corrected at cruise level for the time you\'ll fly each (needs departure time; else current hour).</li><li>Small fields may lack weather, approaches, or fuel — confirm by phone.</li><li>Official TAFs/NOTAMs/TFRs &amp; filing: <a class="inline" href="https://www.1800wxbrief.com" target="_blank">1800wxbrief.com</a>.</li></ul>';
   h+='<div class="foot">Personal Wings · planning aid — not a substitute for a 1800wxbrief/FSS briefing, TFR/NOTAM check, W&amp;B, and DA/performance planning. METAR: NWS · TAF: metar-taf.com · winds: Open-Meteo · fuel/FBO: AirNav.</div>';
   out.innerHTML=h;
   buildMap(pts);
-  WINDARR=null; compute(); loadMetars(pts); loadWinds(); loadNotams(pts);
+  WINDARR=null; compute(); loadMetars(pts); loadWinds(); loadNotams(pts); loadFood(pts);
+}
+function smDist(la1,lo1,la2,lo2){ var R=3958.8,p1=la1*Math.PI/180,p2=la2*Math.PI/180,dp=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180;
+  var x=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2); return 2*R*Math.asin(Math.sqrt(x)); }
+function loadFood(pts){
+  var box=document.getElementById('food'); if(!box) return;
+  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~2 sm (OpenStreetMap) — can\'t confirm on-field, so verify or cross-check <a class="inline" href="https://www.100dollarhamburger.com/" target="_blank">$100 Hamburger ↗</a>.</div>';
+  pts.forEach(function(p){
+    if(p.la==null||p.lo==null) return;
+    var blk=document.createElement('div'); blk.className='wxrow'; blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>'; box.appendChild(blk);
+    var qy='[out:json][timeout:12];(node["amenity"~"^(restaurant|cafe|fast_food|pub|bar)$"](around:3200,'+p.la+','+p.lo+'););out body 30;';
+    fetch('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(qy))
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .then(function(j){
+        var els=(j.elements||[]).filter(function(e){return e.tags&&e.tags.name&&e.lat!=null;});
+        els.forEach(function(e){ e._d=smDist(p.la,p.lo,e.lat,e.lon); });
+        els.sort(function(a,b){return a._d-b._d;});
+        var top=els.slice(0,4);
+        if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no listed food within 2 sm</span>'; return; }
+        blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(e){
+          var am=e.tags.amenity, t=am==='cafe'?'café':(am==='fast_food'?'fast food':(am==='pub'||am==='bar'?am:'restaurant'));
+          var c=e.tags.cuisine?(' · '+nesc(e.tags.cuisine.replace(/[_;]/g,function(x){return x===';'?', ':' ';}))):'';
+          return '<span class="raw">'+nesc(e.tags.name)+' <span style="color:#889">('+t+c+' · '+e._d.toFixed(1)+' sm)</span></span>';
+        }).join('');
+      })
+      .catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable</span>'; });
+  });
 }
 
 function legTimes(useWind){ // returns {gs:[],hr:[],burn:[],startMs:[],comp:[],wind:[]}

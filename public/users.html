@@ -8,11 +8,11 @@
   body{margin:0;font:15px/1.5 -apple-system,Segoe UI,Roboto,system-ui,sans-serif;color:#1a2230;background:#eef2f7}
   .wrap{max-width:900px;margin:26px auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px 22px 26px;box-shadow:0 6px 24px #0b3d9114}
   h1{margin:0 0 2px;font-size:18px;color:var(--blue)}
-  .sub{color:#6b7889;font-size:13px;margin:0 0 16px}
+  .sub{color:#6b7889;font-size:13px;margin:0 0 14px}
   a.back{font-size:13px;color:var(--blue);text-decoration:none;margin-right:12px}
   .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
   input{border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:14px system-ui}
-  #key{width:230px}#q{flex:1;min-width:180px}
+  #q{flex:1;min-width:180px}
   button{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 14px;font:600 13px system-ui;cursor:pointer}
   button.sec{background:#e7edf5;color:var(--blue)}
   table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
@@ -20,44 +20,70 @@
   th{color:#6b7889;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
   tr:hover td{background:#f7faff}
   .del{background:#fdeaea;color:#9b1c1c;border:1px solid #f3c2c2;border-radius:6px;padding:5px 9px;font:600 12px system-ui;cursor:pointer}
+  .adm{border:1px solid var(--line);border-radius:6px;padding:5px 9px;font:600 12px system-ui;cursor:pointer;background:#eef2f7;color:var(--blue)}
+  .adm.on{background:#e7f6ec;color:#166534;border-color:#b7e2c4}
   .muted{color:#8a97a6}
   #msg{margin:10px 0;font-size:13px;padding:0}#msg.show{padding:10px;border-radius:8px}
   .ok{background:#e7f6ec;color:#166534;border:1px solid #b7e2c4}
   .err{background:#fdeaea;color:#9b1c1c;border:1px solid #f3c2c2}
   .count{font-weight:700;color:var(--blue)}
+  #auth{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f7faff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+  #auth input{min-width:150px}
+  .who{font-size:13px;color:#1a2230}
 </style></head>
 <body>
 <div class="wrap">
   <div><a class="back" href="/wx/">← Map</a><a class="back" href="/admin.html">Notify users →</a></div>
   <h1>Users</h1>
-  <p class="sub">Your account directory. Delete removes the user and their saved routes permanently.</p>
+  <p class="sub">Sign in with an admin account. Delete removes the user and their saved routes permanently.</p>
 
-  <div class="bar">
-    <input id="key" type="password" placeholder="Admin key" autocomplete="off">
-    <button id="load">Load users</button>
+  <div id="auth"></div>
+  <div class="bar" id="tools" style="display:none">
     <input id="q" placeholder="Filter by name or email">
     <button id="csv" class="sec">Export CSV</button>
   </div>
   <div id="msg"></div>
   <div id="summary" class="muted"></div>
   <table id="tbl" style="display:none">
-    <thead><tr><th>Name</th><th>Email</th><th>Joined</th><th>Routes</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Email</th><th>Joined</th><th>Routes</th><th>Admin</th><th></th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 function $(id){return document.getElementById(id);}
-var USERS=[];
+var SB=null, SESSION=null, USERS=[];
 function show(cls,m){var e=$('msg');e.className='show '+cls;e.textContent=m;}
 function clearMsg(){var e=$('msg');e.className='';e.textContent='';}
 function fmtDate(s){ if(!s) return ''; var d=new Date(s); return isNaN(d)?'':d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
 function esc(s){return String(s==null?'':s).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
 
+function token(){ return SESSION && SESSION.access_token; }
 function api(payload){
-  var key=$('key').value.trim();
-  if(!key){show('err','Enter the admin key.');return Promise.reject();}
-  return fetch('/.netlify/functions/users',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':key},body:JSON.stringify(payload)})
+  if(!token()){show('err','Sign in first.');return Promise.reject();}
+  return fetch('/.netlify/functions/users',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},body:JSON.stringify(payload)})
     .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;});});
+}
+function renderAuth(){
+  var a=$('#auth')||document.getElementById('auth');
+  if(SESSION){
+    a.innerHTML='<span class="who">Signed in as <b>'+esc(SESSION.user.email)+'</b></span>'+
+      '<button id="reload" class="sec">Load users</button><button id="signout" class="sec">Sign out</button>';
+    document.getElementById('reload').onclick=load;
+    document.getElementById('signout').onclick=function(){ SB.auth.signOut(); };
+  } else {
+    a.innerHTML='<input id="ae" type="email" placeholder="admin email" autocomplete="email">'+
+      '<input id="ap" type="password" placeholder="password" autocomplete="current-password">'+
+      '<button id="ain">Sign in</button>';
+    document.getElementById('ain').onclick=function(){
+      var e=document.getElementById('ae').value.trim(), p=document.getElementById('ap').value;
+      if(!e||!p){show('err','Enter email and password.');return;}
+      show('ok','Signing in…');
+      SB.auth.signInWithPassword({email:e,password:p}).then(function(r){ if(r.error) show('err',r.error.message); else clearMsg(); });
+    };
+  }
+  document.getElementById('tools').style.display=SESSION?'flex':'none';
+  if(!SESSION){ document.getElementById('tbl').style.display='none'; document.getElementById('summary').textContent=''; }
 }
 function draw(){
   var q=$('q').value.trim().toLowerCase();
@@ -65,6 +91,7 @@ function draw(){
   $('summary').innerHTML='Showing <span class="count">'+list.length+'</span> of '+USERS.length+' users';
   $('rows').innerHTML=list.map(function(u){
     return '<tr><td>'+esc(u.name||'—')+'</td><td>'+esc(u.email)+'</td><td>'+fmtDate(u.created_at)+'</td><td>'+u.routes+'</td>'+
+      '<td><button class="adm'+(u.is_admin?' on':'')+'" data-adm="'+esc(u.id)+'" data-val="'+(u.is_admin?'0':'1')+'">'+(u.is_admin?'Admin':'Make admin')+'</button></td>'+
       '<td style="text-align:right"><button class="del" data-id="'+esc(u.id)+'" data-em="'+esc(u.email)+'">Delete</button></td></tr>';
   }).join('');
   $('tbl').style.display=USERS.length?'table':'none';
@@ -76,16 +103,27 @@ function draw(){
         .catch(function(e){ if(e) show('err','Delete failed: '+e.message); b.disabled=false; b.textContent='Delete'; });
     };
   });
+  Array.prototype.forEach.call(document.querySelectorAll('.adm'),function(b){
+    b.onclick=function(){ var id=b.getAttribute('data-adm'), val=b.getAttribute('data-val')==='1';
+      b.disabled=true;
+      api({action:'setAdmin',id:id,value:val}).then(function(){ var u=USERS.filter(function(x){return x.id===id;})[0]; if(u)u.is_admin=val; draw(); show('ok',(val?'Granted':'Removed')+' admin'); })
+        .catch(function(e){ if(e) show('err','Failed: '+e.message); b.disabled=false; });
+    };
+  });
 }
 function load(){ clearMsg(); show('ok','Loading…'); api({action:'list'}).then(function(j){ USERS=j.users||[]; clearMsg(); draw(); })
   .catch(function(e){ if(e) show('err','Error: '+e.message); }); }
 function csv(){
   if(!USERS.length){show('err','Load users first.');return;}
-  var rows=[['name','email','joined','routes']].concat(USERS.map(function(u){return [u.name,u.email,u.created_at||'',u.routes];}));
+  var rows=[['name','email','joined','routes','is_admin']].concat(USERS.map(function(u){return [u.name,u.email,u.created_at||'',u.routes,u.is_admin];}));
   var out=rows.map(function(r){return r.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
   var a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(out); a.download='personal-wings-users.csv'; a.click();
 }
-$('load').onclick=load; $('csv').onclick=csv; $('q').oninput=draw;
-$('key').addEventListener('keydown',function(e){if(e.key==='Enter')load();});
+$('q').oninput=draw; $('csv').onclick=csv;
+fetch('/wx/wx-config.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(cfg){
+  SB=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
+  SB.auth.getSession().then(function(r){ SESSION=r.data?r.data.session:null; renderAuth(); if(SESSION) load(); });
+  SB.auth.onAuthStateChange(function(_e,s){ SESSION=s; renderAuth(); if(SESSION) load(); });
+}).catch(function(){ document.getElementById('auth').innerHTML='<span class="err">Config failed to load.</span>'; });
 </script>
 </body></html>

@@ -26,11 +26,11 @@
 <div class="wrap">
   <a class="back" href="/wx/">← Map</a><a class="back" href="/users.html">Manage users →</a>
   <h1>Notify Users</h1>
-  <p class="sub">Emails everyone in your user directory via Postmark. Test on yourself first.</p>
+  <p class="sub">Sign in with an admin account. Emails everyone in your user directory via Postmark. Test on yourself first.</p>
 
-  <label>Admin key</label>
-  <input id="key" type="password" placeholder="ADMIN_KEY (set in Netlify env)" autocomplete="off">
+  <div id="auth" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f7faff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:6px"></div>
 
+  <div id="form" style="display:none">
   <label>Subject</label>
   <input id="subject" placeholder="e.g. New: share your live track by email">
 
@@ -48,15 +48,36 @@
   <button id="count" class="sec">Count recipients (no send)</button>
   <button id="sendtest" class="sec">Send test to me</button>
   <button id="sendall">Send to all users</button>
+  </div>
 
   <div id="out"></div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
 function show(cls,msg){var o=$('out');o.className='show '+cls;o.textContent=msg;}
+var SB=null, SESSION=null;
+function token(){ return SESSION && SESSION.access_token; }
+function renderAuth(){
+  var a=$('auth');
+  if(SESSION){
+    a.innerHTML='<span style="font-size:13px">Signed in as <b>'+esc(SESSION.user.email)+'</b></span>'+
+      '<button class="sec" id="signout" style="margin:0">Sign out</button>';
+    $('signout').onclick=function(){ SB.auth.signOut(); };
+    $('form').style.display='block';
+  } else {
+    a.innerHTML='<input id="ae" type="email" placeholder="admin email" style="flex:1;min-width:150px">'+
+      '<input id="ap" type="password" placeholder="password" style="flex:1;min-width:120px">'+
+      '<button id="ain" style="margin:0">Sign in</button>';
+    $('ain').onclick=function(){ var e=$('ae').value.trim(), p=$('ap').value; if(!e||!p){show('err','Enter email and password.');return;}
+      show('ok','Signing in…'); SB.auth.signInWithPassword({email:e,password:p}).then(function(r){ if(r.error) show('err',r.error.message); else { var o=$('out'); o.className=''; o.textContent=''; } }); };
+    $('form').style.display='none';
+  }
+}
 function send(mode){   // mode: 'count' | 'test' | 'all'
-  var key=$('key').value.trim(), subject=$('subject').value.trim(), message=$('message').value.trim(), test=$('test').value.trim();
-  if(!key){show('err','Enter the admin key.');return;}
+  if(!token()){show('err','Sign in first.');return;}
+  var subject=$('subject').value.trim(), message=$('message').value.trim(), test=$('test').value.trim();
   var payload={subject:subject||'(dry run)',message:message||'(dry run)'};
   if(mode==='count'){ payload.dryRun=true; }
   else {
@@ -65,7 +86,7 @@ function send(mode){   // mode: 'count' | 'test' | 'all'
     if(mode==='all' && !window.confirm('Send this to ALL users in the directory?')) return;
   }
   show('ok', mode==='count'?'Counting…':'Sending…');
-  fetch('/.netlify/functions/notify',{method:'POST',headers:{'Content-Type':'application/json','x-admin-key':key},body:JSON.stringify(payload)})
+  fetch('/.netlify/functions/notify',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},body:JSON.stringify(payload)})
     .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
     .then(function(res){
       var j=res.j;
@@ -80,5 +101,10 @@ function send(mode){   // mode: 'count' | 'test' | 'all'
 $('count').onclick=function(){send('count');};
 $('sendtest').onclick=function(){send('test');};
 $('sendall').onclick=function(){send('all');};
+fetch('/wx/wx-config.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(cfg){
+  SB=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
+  SB.auth.getSession().then(function(r){ SESSION=r.data?r.data.session:null; renderAuth(); });
+  SB.auth.onAuthStateChange(function(_e,s){ SESSION=s; renderAuth(); });
+}).catch(function(){ $('auth').innerHTML='<span class="err">Config failed to load.</span>'; });
 </script>
 </body></html>

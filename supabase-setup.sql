@@ -6,8 +6,15 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   name text,
   email text,
+  default_reg text,           -- per-user default aircraft tail # for live tracking
+  is_admin boolean not null default false,   -- admin rights for /admin.html and /users.html
   created_at timestamptz default now()
 );
+-- migrations for an existing profiles table (safe to re-run):
+alter table public.profiles add column if not exists default_reg text;
+alter table public.profiles add column if not exists is_admin boolean not null default false;
+-- BOOTSTRAP: make yourself the first admin (run once, edit the email):
+--   update public.profiles set is_admin = true where email = 'rich@personalwings.com';
 alter table public.profiles enable row level security;
 drop policy if exists "profiles_own_read" on public.profiles;
 create policy "profiles_own_read" on public.profiles for select using (auth.uid() = id);

@@ -18,7 +18,7 @@ _Last updated: 2026-07-26._
 | Page | File | What it does |
 |------|------|--------------|
 | Live map | `public/wx/index.html` | Route entry, radar/echo-tops/satellite (4 hr loop), METARs, winds aloft, live ADS-B for N13709, GPS own-ship, **Share** (link/email/text), **New route**, in-app briefing, account sign-in. |
-| Briefing | `public/brief.html` | Route-synced briefing: departure **date** + time, cruise altitude, wind-corrected legs, ETAs, fuel burn/reserve, METAR+TAF per field, winds/temps aloft, best-altitude, ISA-dev, fuel type per field, embedded map + SPC overlay. |
+| Briefing | `public/brief.html` | Route-synced briefing: departure **date** + time, cruise altitude, wind-corrected legs, ETAs, fuel burn/reserve, METAR+TAF per field, winds/temps aloft, best-altitude, ISA-dev, fuel type per field, NOTAMs, food nearby (OpenStreetMap), embedded map + SPC overlay. |
 | Account widget | `public/pwauth.js` | Loaded on map + briefing. Sign in / create account / forgot password, and per-user saved routes. Entry point is the **"👤 Sign in"** link in each page's header. |
 | Notify users | `public/admin.html` | Compose + send an email blast to all users. Count-recipients dry run, send-test-to-me, send-to-all. Admin-key gated. |
 | Manage users | `public/users.html` | List all users (name, email, joined, # routes), search, CSV export, delete (cascades routes). Admin-key gated. |
@@ -29,8 +29,8 @@ _Last updated: 2026-07-26._
 |----------|---------|--------------|
 | `taf.js` | Proxies metar-taf.com TAFs (holds key server-side, adds CORS). | `METARTAF_KEY` |
 | `notam.js` | Proxies autorouter.aero NOTAMs per airport (OAuth client-credentials, token cached, adds CORS). Degrades to a NOTAM-search link if unset. | `AUTOROUTER_USER`, `AUTOROUTER_PASS` |
-| `notify.js` | Reads user directory, emails everyone via Postmark. Test sends → transactional stream; blasts → broadcast stream. | `ADMIN_KEY`, `POSTMARK_TOKEN`, `POSTMARK_FROM`, `POSTMARK_STREAM`, `SUPABASE_SERVICE_ROLE` |
-| `users.js` | List users (+ route counts) and delete a user. | `ADMIN_KEY`, `SUPABASE_SERVICE_ROLE` |
+| `notify.js` | Reads user directory, emails everyone via Postmark. Test sends → transactional stream; blasts → broadcast stream. Admin-only (login + `is_admin`). | `POSTMARK_TOKEN`, `POSTMARK_FROM`, `POSTMARK_STREAM`, `SUPABASE_SERVICE_ROLE` |
+| `users.js` | List users (+ route counts), delete a user, toggle admin. Admin-only (login + `is_admin`). | `SUPABASE_SERVICE_ROLE` |
 
 `netlify.toml`: publish dir `public`, functions dir `netlify/functions`.
 
@@ -42,7 +42,7 @@ Radar/satellite: Iowa Environmental Mesonet + NASA GIBS (GOES-East Band13 IR). E
 
 - Project URL: `https://dbkbigxeabzfzoqommtf.supabase.co`
 - **Publishable key** (safe in client, in `wx-config.json`): `sb_publishable_7BOSD_...`
-- **Tables:** `profiles` (id, name, email, created_at) and `routes` (user_id, name, route, aircraft, updated_at). Both cascade-delete with the auth user. RLS: users see only their own rows.
+- **Tables:** `profiles` (id, name, email, default_reg, is_admin, created_at) and `routes` (user_id, name, route, aircraft, updated_at). Both cascade-delete with the auth user. RLS: users see only their own rows.
 - A trigger auto-creates a `profiles` row on signup (captures name + email).
 - Auth emails (confirm / reset) send through **Postmark SMTP** (configured in the Supabase dashboard, not the repo).
 
@@ -61,7 +61,7 @@ Radar/satellite: Iowa Environmental Mesonet + NASA GIBS (GOES-East Band13 IR). E
 |-----|----------------|
 | `METARTAF_KEY` | metar-taf.com API key |
 | `AUTOROUTER_USER` / `AUTOROUTER_PASS` | autorouter.aero account email + password (account must be API-enabled). Optional — NOTAMs show a search link until set. |
-| `ADMIN_KEY` | a long random string you chose — gate for admin.html / users.html |
+| `SUPABASE_ANON_KEY` | *(optional)* publishable/anon key for validating admin login tokens; defaults to the known publishable key |
 | `POSTMARK_TOKEN` | Postmark Server API Token |
 | `POSTMARK_FROM` | `no-reply@personalwings.com` (verified) |
 | `POSTMARK_STREAM` | `broadcast` |
@@ -78,8 +78,9 @@ After changing any env var: **Deploys → Trigger deploy → Deploy site** (they
 
 ## Admin quick-start
 
-- **Notify:** open `/admin.html` → admin key → subject + message → **Send test to me** → **Send to all users**.
-- **Manage users:** open `/users.html` → admin key → **Load users** → search / **Export CSV** / delete.
+- **Admin access:** admin pages require signing in with an account whose `profiles.is_admin = true`. Bootstrap the first admin in SQL: `update public.profiles set is_admin=true where email='rich@personalwings.com';` — after that, promote others from the Users page.
+- **Notify:** open `/admin.html` → sign in → subject + message → **Send test to me** → **Send to all users**.
+- **Manage users:** open `/users.html` → sign in → **Load users** → search / CSV / delete / toggle admin.
 
 ## Open items / ideas
 

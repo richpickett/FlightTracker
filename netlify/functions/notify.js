@@ -21,6 +21,24 @@ const json = (code, obj) => ({
 
 function esc(s) { return String(s || "").replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])); }
 
+const DEF_URL = "https://dbkbigxeabzfzoqommtf.supabase.co";
+const DEF_ANON = "sb_publishable_7BOSD_FB87NfHvyo78gD9g_fYpWfhIX";
+function base() { return (process.env.SUPABASE_URL || DEF_URL).replace(/\/$/, ""); }
+function svcHeaders() { const key = process.env.SUPABASE_SERVICE_ROLE; return { apikey: key, Authorization: /^ey/.test(key) ? "Bearer " + key : key }; }
+// Confirm the caller is a logged-in admin (profiles.is_admin = true).
+async function verifyAdmin(event) {
+  const auth = event.headers.authorization || event.headers.Authorization || "";
+  const token = auth.replace(/^Bearer\s+/i, ""); if (!token) return null;
+  const anon = process.env.SUPABASE_ANON_KEY || DEF_ANON;
+  const ur = await fetch(base() + "/auth/v1/user", { headers: { apikey: anon, Authorization: "Bearer " + token } });
+  if (!ur.ok) return null;
+  const u = await ur.json(); if (!u || !u.id) return null;
+  const pr = await fetch(base() + "/rest/v1/profiles?select=is_admin&id=eq." + u.id, { headers: svcHeaders() });
+  if (!pr.ok) return null;
+  const rows = await pr.json();
+  return (rows[0] && rows[0].is_admin === true) ? u : null;
+}
+
 // Turn a plain-text message into simple, safe HTML (paragraphs + line breaks).
 function toHtml(msg) {
   const paras = String(msg || "").trim().split(/\n{2,}/).map(p =>
@@ -69,11 +87,12 @@ async function sendBatch(messages) {
 exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS")
     return { statusCode: 204, headers: { "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST,OPTIONS", "Access-Control-Allow-Headers": "content-type,x-admin-key" } };
+      "Access-Control-Allow-Methods": "POST,OPTIONS", "Access-Control-Allow-Headers": "content-type,authorization" } };
   if (event.httpMethod !== "POST") return json(405, { error: "POST only" });
 
-  if (!process.env.ADMIN_KEY || (event.headers["x-admin-key"] || event.headers["X-Admin-Key"]) !== process.env.ADMIN_KEY)
-    return json(401, { error: "unauthorized" });
+  let admin;
+  try { admin = await verifyAdmin(event); } catch (e) { return json(500, { error: String(e.message || e) }); }
+  if (!admin) return json(401, { error: "unauthorized — sign in with an admin account" });
   if (!process.env.POSTMARK_TOKEN || !process.env.POSTMARK_FROM)
     return json(500, { error: "POSTMARK_TOKEN / POSTMARK_FROM not configured" });
 
