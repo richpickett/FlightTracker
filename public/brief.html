@@ -150,7 +150,7 @@ function foodLabel(am){ return am==='cafe'?'café':(am==='fast_food'?'fast food'
 function loadFood(pts){
   var box=document.getElementById('food'); if(!box) return;
   var fields=pts.filter(function(p){return p.la!=null&&p.lo!=null;});
-  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~2.5 sm (OpenStreetMap, incl. on-field) — verify, or cross-check <a class="inline" href="https://www.100dollarhamburger.com/" target="_blank">$100 Hamburger ↗</a>.</div>';
+  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~1 sm (OpenStreetMap, incl. on-field) — verify, or cross-check <a class="inline" href="https://www.100dollarhamburger.com/" target="_blank">$100 Hamburger ↗</a>.</div>';
   var rows={};
   fields.forEach(function(p){ var blk=document.createElement('div'); blk.className='wxrow'; blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>'; box.appendChild(blk); rows[p.id]=blk; });
   // sequential — one Overpass request at a time so the public server doesn't rate-limit/hang us
@@ -159,9 +159,9 @@ function loadFood(pts){
     if(i>=fields.length) return;
     var p=fields[i++], blk=rows[p.id];
     fetch('/.netlify/functions/food?lat='+p.la+'&lon='+p.lo).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){
-      var near=(j.places||[]).map(function(e){ return {e:e,d:smDist(p.la,p.lo,e.lat,e.lon)}; }).filter(function(x){return x.d<=2.6;});
-      near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,6);
-      if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 2.5 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; return; }
+      var near=(j.places||[]).map(function(e){ return {e:e,d:smDist(p.la,p.lo,e.lat,e.lon)}; }).filter(function(x){return x.d<=1.05;});
+      near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,8);
+      if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 1 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; return; }
       blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.e;
         var c=e.cuisine?(' · '+nesc(e.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
         return '<span class="raw">'+nesc(e.name)+' <span style="color:#889">('+foodLabel(e.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
