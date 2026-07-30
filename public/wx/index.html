@@ -536,7 +536,9 @@ function setReg(v,explicit){
 // Per-user default pushed by the account widget; only applies if the user hasn't chosen a tail via link or by hand.
 window.PW_setReg=function(reg,opts){ opts=opts||{}; if(regExplicit && !opts.force) return; setReg(reg, !!opts.force); };
 document.getElementById('regin').addEventListener('change',function(){ setReg(this.value,true); });
-document.getElementById('regin').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); setReg(this.value,true); } });
+document.getElementById('regin').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); this.blur(); setReg(this.value,true); } });
+var _regDeb; // apply live as you type (once it looks like a tail #), so you don't have to press Enter
+document.getElementById('regin').addEventListener('input',function(){ var self=this; clearTimeout(_regDeb); _regDeb=setTimeout(function(){ if((self.value||'').replace(/[^A-Za-z0-9]/g,'').length>=3) setReg(self.value,true); },700); });
 startADSB();
 
 // ---------- dynamic route entry + airport lookup ----------
