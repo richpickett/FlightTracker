@@ -139,9 +139,9 @@ function smDist(la1,lo1,la2,lo2){ var R=3958.8,p1=la1*Math.PI/180,p2=la2*Math.PI
   var x=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2); return 2*R*Math.asin(Math.sqrt(x)); }
 var OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.openstreetmap.ru/api/interpreter'];
 var FOOD_AMEN='^(restaurant|cafe|fast_food|pub|bar|biergarten|food_court)$';
-function foodQuery(la,lo){ return '[out:json][timeout:20];(nwr["amenity"~"'+FOOD_AMEN+'"](around:4000,'+la+','+lo+'););out center 60;'; }
+function foodQuery(la,lo){ var a='["amenity"~"'+FOOD_AMEN+'"](around:1609,'+la+','+lo+');'; return '[out:json][timeout:60];(node'+a+'way'+a+'relation'+a+');out center tags;'; }
 function overpass(q,i){ i=i||0; if(i>=OVERPASS.length) return Promise.reject(new Error('all endpoints failed'));
-  var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},12000);
+  var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},20000);
   return fetch(OVERPASS[i]+'?data='+encodeURIComponent(q),{signal:ctrl.signal})
     .then(function(r){ clearTimeout(to); if(!r.ok) throw 0; return r.json(); })
     .catch(function(){ clearTimeout(to); return overpass(q,i+1); }); }
@@ -150,7 +150,7 @@ function foodLabel(am){ return am==='cafe'?'café':(am==='fast_food'?'fast food'
 function loadFood(pts){
   var box=document.getElementById('food'); if(!box) return;
   var fields=pts.filter(function(p){return p.la!=null&&p.lo!=null;});
-  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~2.5 sm (OpenStreetMap, incl. on-field) — verify, or cross-check <a class="inline" href="https://www.100dollarhamburger.com/" target="_blank">$100 Hamburger ↗</a>.</div>';
+  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~1 sm (OpenStreetMap, incl. on-field) — verify, or cross-check <a class="inline" href="https://www.100dollarhamburger.com/" target="_blank">$100 Hamburger ↗</a>.</div>';
   var rows={};
   fields.forEach(function(p){ var blk=document.createElement('div'); blk.className='wxrow'; blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>'; box.appendChild(blk); rows[p.id]=blk; });
   // sequential — one Overpass request at a time so the public server doesn't rate-limit/hang us
@@ -158,15 +158,16 @@ function loadFood(pts){
   function next(){
     if(i>=fields.length) return;
     var p=fields[i++], blk=rows[p.id];
+    // browser-side (your IP) — Overpass blocks datacenter IPs, so this must NOT go through a server proxy
     overpass(foodQuery(p.la,p.lo)).then(function(j){
-      var near=(j.elements||[]).map(function(e){ var la=e.lat!=null?e.lat:(e.center&&e.center.lat), lo=e.lon!=null?e.lon:(e.center&&e.center.lon); return (e.tags&&e.tags.name&&la!=null)?{tags:e.tags,d:smDist(p.la,p.lo,la,lo)}:null; }).filter(Boolean);
-      near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,6);
-      if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 2.5 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; return; }
-      blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.tags;
-        var c=e.cuisine?(' · '+nesc(e.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
-        return '<span class="raw">'+nesc(e.name)+' <span style="color:#889">('+foodLabel(e.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
+      var near=(j.elements||[]).map(function(el){ var la=el.lat!=null?el.lat:(el.center&&el.center.lat), lo=el.lon!=null?el.lon:(el.center&&el.center.lon); var t=el.tags||{}; var nm=t.name||t.brand; return (nm&&la!=null)?{name:nm,amenity:t.amenity||'restaurant',cuisine:t.cuisine||'',d:smDist(p.la,p.lo,la,lo)}:null; }).filter(Boolean).filter(function(x){return x.d<=1.05;});
+      near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,8);
+      if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 1 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; return; }
+      blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){
+        var c=x.cuisine?(' · '+nesc(x.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
+        return '<span class="raw">'+nesc(x.name)+' <span style="color:#889">('+foodLabel(x.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
       }).join('');
-    }).catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">OSM lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; }).then(next,next);
+    }).catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; }).then(next,next);
   }
   next();
 }
@@ -284,13 +285,13 @@ function loadMetars(pts){
 }
 // aviationweather.gov fallback — carries many GA fields the NWS observations API returns empty.
 function metarFB(p,ml,cats,pts){
-  fetch('https://aviationweather.gov/api/data/metar?ids='+encodeURIComponent(p.id)+'&format=json')
+  fetch('/.netlify/functions/metar?id='+encodeURIComponent(p.id))
     .then(function(r){if(!r.ok)throw 0;return r.json();})
     .then(function(a){ var o=a&&a[0]; if(!o||!o.rawOb) throw 0;
-      var visSM=(typeof o.visib==='number')?o.visib:(String(o.visib).indexOf('+')>=0?10:(parseFloat(o.visib)||99)), ceil=99999;
-      (o.clouds||[]).forEach(function(c){if((c.cover==='BKN'||c.cover==='OVC'||c.cover==='VV')&&c.base!=null)ceil=Math.min(ceil,c.base);});
-      var fc=cat(visSM,ceil);cats[p.id]=fc;condSum(cats,pts);
-      ml.innerHTML='<span class="badge" style="background:'+CC[fc]+'">'+fc+'</span> <b>'+p.id+'</b> <span style="color:#889">METAR</span><span class="raw">'+nesc(o.rawOb)+'</span>';
+      var fc=o.fltCat; if(!fc){ var visSM=(typeof o.visib==='number')?o.visib:(String(o.visib).indexOf('+')>=0?10:(parseFloat(o.visib)||99)), ceil=99999;
+        (o.clouds||[]).forEach(function(c){if((c.cover==='BKN'||c.cover==='OVC'||c.cover==='VV')&&c.base!=null)ceil=Math.min(ceil,c.base);}); fc=cat(visSM,ceil); }
+      cats[p.id]=fc;condSum(cats,pts);
+      ml.innerHTML='<span class="badge" style="background:'+(CC[fc]||'#8090a0')+'">'+fc+'</span> <b>'+p.id+'</b> <span style="color:#889">METAR</span><span class="raw">'+nesc(o.rawOb)+'</span>';
     })
     .catch(function(){cats[p.id]='NA';ml.innerHTML='<span class="badge" style="background:#8090a0">--</span> <b>'+p.id+'</b> <span style="color:#889">no METAR (field not reporting)</span>';});
 }
