@@ -569,9 +569,14 @@ function gcNm(a,b){ var R=3440.065,p1=a[0]*Math.PI/180,p2=b[0]*Math.PI/180,dp=(b
 function bearing(a,b){ var y=Math.sin((b[1]-a[1])*Math.PI/180)*Math.cos(b[0]*Math.PI/180);
   var x=Math.cos(a[0]*Math.PI/180)*Math.sin(b[0]*Math.PI/180)-Math.sin(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.cos((b[1]-a[1])*Math.PI/180);
   return Math.round((Math.atan2(y,x)*180/Math.PI+360)%360); }
+// Drop consecutive duplicate fields and collapse an exactly-doubled route (A+A → A) — guards against a route that got duplicated upstream.
+function dedupeRoute(ids){ var o=ids.slice();
+  // collapse a repeated adjacent block at the start (handles "X X" and "X X + suffix")
+  for(var k=Math.floor(o.length/2); k>=1; k--){ var same=true; for(var j=0;j<k;j++){ if(o[j]!==o[k+j]){same=false;break;} } if(same){ o=o.slice(0,k).concat(o.slice(2*k)); break; } }
+  var out=[]; for(var i=0;i<o.length;i++){ if(i===0||o[i]!==o[i-1]) out.push(o[i]); } return out; }   // then drop consecutive dups
 function plotRoute(text){
   if(!Object.keys(AIRPORTS).length){ setRouteMsg('airport data still loading…'); return false; }
-  var ids=(text||'').trim().toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  var ids=dedupeRoute((text||'').trim().toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
   var found=[], missing=[];
   ids.forEach(function(id){ var a=resolveId(id); if(a) found.push([id,a[0],a[1],a[2]]); else missing.push(id); });
   if(found.length<2){ setRouteMsg('need ≥2 valid airports'+(missing.length?' · unknown: '+missing.join(', '):'')); return false; }
