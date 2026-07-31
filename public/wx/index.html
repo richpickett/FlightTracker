@@ -311,6 +311,7 @@ function loadMetars(){
       .then(function(r){ clearTimeout(to); if(!r.ok) throw 0; return r.json(); })
       .then(function(j){
         var p=j.properties||{};
+        if(!p.rawMessage){ metarFallback(id); return; }   // NWS returned empty → aviationweather.gov proxy
         var visM=p.visibility&&p.visibility.value; var visSM=visM==null?99:visM/1609.34;
         var ceil=99999;
         (p.cloudLayers||[]).forEach(function(cl){
@@ -551,7 +552,7 @@ fetch('airports.json').then(function(r){return r.json();}).then(function(j){ AIR
   // tracked tail number: URL ?reg= → saved → default
   var urlReg=null,savedReg=null; try{ urlReg=new URLSearchParams(location.search).get('reg'); }catch(e){}
   try{ savedReg=localStorage.getItem('pw_reg'); }catch(e){}
-  if(urlReg) regExplicit=true;   // shared link's tail wins over any profile default
+  if(urlReg||savedReg) regExplicit=true;   // a shared-link or last-chosen tail (incl. from the briefing) wins over the profile default
   REG=((urlReg||savedReg||'').toUpperCase().replace(/[^A-Z0-9]/g,''));
   var rg=document.getElementById('regin'); if(rg) rg.value=REG;
   setRouteMsg(Object.keys(j).length.toLocaleString()+' US airports loaded');

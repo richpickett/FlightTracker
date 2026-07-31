@@ -139,9 +139,9 @@ function smDist(la1,lo1,la2,lo2){ var R=3958.8,p1=la1*Math.PI/180,p2=la2*Math.PI
   var x=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2); return 2*R*Math.asin(Math.sqrt(x)); }
 var OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.openstreetmap.ru/api/interpreter'];
 var FOOD_AMEN='^(restaurant|cafe|fast_food|pub|bar|biergarten|food_court)$';
-function foodQuery(la,lo){ return '[out:json][timeout:20];(nwr["amenity"~"'+FOOD_AMEN+'"](around:4000,'+la+','+lo+'););out center 60;'; }
+function foodQuery(la,lo){ var a='["amenity"~"'+FOOD_AMEN+'"](around:1609,'+la+','+lo+');'; return '[out:json][timeout:60];(node'+a+'way'+a+'relation'+a+');out center tags;'; }
 function overpass(q,i){ i=i||0; if(i>=OVERPASS.length) return Promise.reject(new Error('all endpoints failed'));
-  var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},12000);
+  var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},20000);
   return fetch(OVERPASS[i]+'?data='+encodeURIComponent(q),{signal:ctrl.signal})
     .then(function(r){ clearTimeout(to); if(!r.ok) throw 0; return r.json(); })
     .catch(function(){ clearTimeout(to); return overpass(q,i+1); }); }
@@ -158,13 +158,14 @@ function loadFood(pts){
   function next(){
     if(i>=fields.length) return;
     var p=fields[i++], blk=rows[p.id];
-    fetch('/.netlify/functions/food?lat='+p.la+'&lon='+p.lo).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){
-      var near=(j.places||[]).map(function(e){ return {e:e,d:smDist(p.la,p.lo,e.lat,e.lon)}; }).filter(function(x){return x.d<=1.05;});
+    // browser-side (your IP) — Overpass blocks datacenter IPs, so this must NOT go through a server proxy
+    overpass(foodQuery(p.la,p.lo)).then(function(j){
+      var near=(j.elements||[]).map(function(el){ var la=el.lat!=null?el.lat:(el.center&&el.center.lat), lo=el.lon!=null?el.lon:(el.center&&el.center.lon); var t=el.tags||{}; var nm=t.name||t.brand; return (nm&&la!=null)?{name:nm,amenity:t.amenity||'restaurant',cuisine:t.cuisine||'',d:smDist(p.la,p.lo,la,lo)}:null; }).filter(Boolean).filter(function(x){return x.d<=1.05;});
       near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,8);
       if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 1 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; return; }
-      blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.e;
-        var c=e.cuisine?(' · '+nesc(e.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
-        return '<span class="raw">'+nesc(e.name)+' <span style="color:#889">('+foodLabel(e.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
+      blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){
+        var c=x.cuisine?(' · '+nesc(x.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
+        return '<span class="raw">'+nesc(x.name)+' <span style="color:#889">('+foodLabel(x.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
       }).join('');
     }).catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; }).then(next,next);
   }
@@ -259,7 +260,7 @@ function loadWinds(){
       if(!cols.some(function(c){return c[0]===S.lv[0];})) cols.push([S.lv[0],S.lv[2]]);
       var T=legTimes(true),th='<table><tr><th>Leg</th><th>@</th>'+cols.map(function(c){return '<th class="'+(c[0]===S.lv[0]?'hl':'')+'">'+(c[0]===S.lv[0]?'★':'')+c[1]+'</th>';}).join('')+'</tr>';
       S.legs.forEach(function(L,idx){ var wa=WINDARR[idx]; if(!wa){return;} var ix=wa.time.indexOf(hourStr(T.startMs[idx]));if(ix<0)ix=0;
-        th+='<tr><td>'+S.pts[idx].id+'–'+S.pts[idx+1].id+'</td><td>'+hhmmZ(T.startMs[idx])+'</td>'+cols.map(function(c){var dr=wa['wd'+c[0]],sp=wa['ws'+c[0]];var v=(dr&&dr[ix]!=null)?Math.round(dr[ix])+'°/'+Math.round(sp[ix])+'kt':'—';return '<td class="'+(c[0]===S.lv[0]?'hl':'')+'">'+v+'</td>';}).join('')+'</tr>';});
+        th+='<tr><td>'+S.pts[idx].id+'–'+S.pts[idx+1].id+'</td><td>'+hhmmZ(T.startMs[idx])+'</td>'+cols.map(function(c){var dr=wa['wd'+c[0]],sp=wa['ws'+c[0]],tp=wa['t'+c[0]];var v=(dr&&dr[ix]!=null)?Math.round(dr[ix])+'°/'+Math.round(sp[ix])+'kt'+(tp&&tp[ix]!=null?'<br><span style="color:#889">'+Math.round(tp[ix])+'°C</span>':''):'—';return '<td class="'+(c[0]===S.lv[0]?'hl':'')+'">'+v+'</td>';}).join('')+'</tr>';});
       th+='</table><div class="sub">★ cruise level ('+S.lv[2]+'). Winds shown at each leg\'s time.</div>';
       document.getElementById('wind').innerHTML=th;
     }).catch(function(){document.getElementById('wind').innerHTML='<span style="color:#889">winds unavailable — legs zero-wind</span>';});

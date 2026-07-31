@@ -48,7 +48,7 @@
   <a class="card primary" href="wx/">
     <span class="go">Open →</span>
     <h2>Enroute Weather &amp; Live Tracking</h2>
-    <p>N13709 round trip from San Diego (KMYF) — San Diego · Omaha · Appleton · Boulder and back. Animated radar, echo tops &amp; satellite (last 4 hrs), live METARs, winds aloft, and live ADS-B position with breadcrumb trail. <b>Current leg: KATW → Boulder via Y51 · KBUB · KOGA.</b></p>
+    <p>Animated radar, echo tops &amp; satellite (last 4 hrs), live METARs, winds aloft, and live ADS-B position with breadcrumb trail. <b id="hub-route"></b></p>
     <div class="status"><span class="dot" id="acdot"></span><span id="acstatus">Checking N13709 ADS-B…</span></div>
     <div class="pills"><span class="pill">Radar</span><span class="pill">Echo Tops</span><span class="pill">Satellite</span><span class="pill">METAR</span><span class="pill">Winds aloft</span><span class="pill">ADS-B</span><span class="pill">GPS own-ship</span></div>
   </a>
@@ -68,14 +68,17 @@
 
 <script>
 document.getElementById('stamp').textContent='ops hub · '+new Date().toLocaleDateString();
-fetch('https://api.airplanes.live/v2/reg/N13709').then(function(r){return r.json();}).then(function(j){
+try{ var _rt=localStorage.getItem('pw_route'), _rg=localStorage.getItem('pw_reg'), _el=document.getElementById('hub-route');
+  if(_el&&_rt){ _el.textContent='Last planned: '+(_rg?_rg.toUpperCase()+' · ':'')+_rt.trim().toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean).join(' → '); } }catch(e){}
+var HREG=((_rg||'N13709').toUpperCase().replace(/[^A-Z0-9]/g,''))||'N13709';
+fetch('https://api.airplanes.live/v2/reg/'+encodeURIComponent(HREG)).then(function(r){return r.json();}).then(function(j){
   var ac=(j.ac||[])[0], dot=document.getElementById('acdot'), s=document.getElementById('acstatus');
   if(ac && ac.lat!=null && ac.alt_baro!=null && ac.alt_baro!=='ground'){
     dot.className='dot live';
-    s.innerHTML='<b style="color:#ffb14a">N13709 airborne</b> · '+Math.round(ac.alt_baro).toLocaleString()+'′'+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'');
-  } else if(ac && ac.lat!=null){ dot.className='dot'; s.innerHTML='N13709 on ground / taxi'; }
-  else { dot.className='dot'; s.textContent='N13709 — no current ADS-B contact'; }
-}).catch(function(){ document.getElementById('acstatus').textContent='N13709 — ADS-B status unavailable'; });
+    s.innerHTML='<b style="color:#ffb14a">'+HREG+' airborne</b> · '+Math.round(ac.alt_baro).toLocaleString()+'′'+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'');
+  } else if(ac && ac.lat!=null){ dot.className='dot'; s.innerHTML=HREG+' on ground / taxi'; }
+  else { dot.className='dot'; s.textContent=HREG+' — no current ADS-B contact'; }
+}).catch(function(){ document.getElementById('acstatus').textContent=HREG+' — ADS-B status unavailable'; });
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/pwauth.js"></script>
