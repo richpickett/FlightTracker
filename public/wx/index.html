@@ -655,7 +655,7 @@ document.getElementById('routein').addEventListener('keydown',function(e){ if(e.
 function shareURL(){
   var rt=(document.getElementById('routein')||{}).value||'', q=[];
   if(rt.trim()) q.push('route='+encodeURIComponent(rt.trim().toUpperCase()));
-  if(REG && REG!=='N13709') q.push('reg='+encodeURIComponent(REG));
+  if(REG) q.push('reg='+encodeURIComponent(REG));   // always carry the exact tail being tracked
   return location.origin+location.pathname+(q.length?'?'+q.join('&'):'');
 }
 function shareToast(m){ var t=document.getElementById('pw-share-toast'); if(!t){t=document.createElement('div');t.id='pw-share-toast';document.body.appendChild(t);} t.textContent=m; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(function(){t.classList.remove('show');},2600); }
@@ -673,7 +673,7 @@ function shareMap(){
 function shareMenu(url,title,text){
   var old=document.getElementById('pw-sharemenu'); if(old){ old.remove(); return; }
   var m=document.createElement('div'); m.id='pw-sharemenu';
-  m.innerHTML='<button data-a="copy">🔗 Copy link</button><button data-a="email">✉️ Email link</button><button data-a="sms">💬 Text link</button>';
+  m.innerHTML='<button data-a="copy">🔗 Copy link</button><button data-a="gmail">✉️ Gmail</button><button data-a="email">✉️ Mail app</button><button data-a="sms">💬 Text link</button>';
   document.body.appendChild(m);
   var r=document.getElementById('sharebtn').getBoundingClientRect();
   m.style.left=Math.max(8,Math.min(r.left, window.innerWidth-m.offsetWidth-8))+'px';
@@ -681,10 +681,12 @@ function shareMenu(url,title,text){
   var close=function(){ if(m){m.remove();} document.removeEventListener('click',outside,true); };
   var outside=function(e){ if(!m.contains(e.target) && e.target.id!=='sharebtn') close(); };
   setTimeout(function(){ document.addEventListener('click',outside,true); },0);
-  m.addEventListener('click',function(e){ var a=e.target.getAttribute('data-a'); if(!a) return;
+  function openLink(href,blank){ var a=document.createElement('a'); a.href=href; if(blank){a.target='_blank';a.rel='noopener';} document.body.appendChild(a); a.click(); setTimeout(function(){ if(a.parentNode) a.parentNode.removeChild(a); },200); }
+  m.addEventListener('click',function(e){ var t=e.target; while(t&&t!==m&&!t.getAttribute('data-a')) t=t.parentNode; var a=t&&t.getAttribute?t.getAttribute('data-a'):null; if(!a) return;
     if(a==='copy'){ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(function(){shareToast('🔗 Link copied');},function(){window.prompt('Copy this link:',url);}); } else { window.prompt('Copy this link:',url); } }
-    else if(a==='email'){ location.href='mailto:?subject='+encodeURIComponent(title)+'&body='+encodeURIComponent(text+'\n\n'+url); }
-    else if(a==='sms'){ location.href='sms:?&body='+encodeURIComponent(text+' '+url); }
+    else if(a==='gmail'){ openLink('https://mail.google.com/mail/?view=cm&fs=1&su='+encodeURIComponent(title)+'&body='+encodeURIComponent(text+'\n\n'+url), true); }
+    else if(a==='email'){ openLink('mailto:?subject='+encodeURIComponent(title)+'&body='+encodeURIComponent(text+'\n\n'+url)); }
+    else if(a==='sms'){ openLink('sms:?&body='+encodeURIComponent(text+' '+url)); }
     close();
   });
 }

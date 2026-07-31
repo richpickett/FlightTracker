@@ -144,8 +144,8 @@ var OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.s
 var FOOD_AMEN='^(restaurant|cafe|fast_food|pub|bar|biergarten|food_court)$';
 function foodQuery(la,lo){ var a='["amenity"~"'+FOOD_AMEN+'"](around:1609,'+la+','+lo+');'; return '[out:json][timeout:60];(node'+a+'way'+a+'relation'+a+');out center tags;'; }
 function overpass(q,i){ i=i||0; if(i>=OVERPASS.length) return Promise.reject(new Error('all endpoints failed'));
-  var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},12000);
-  return fetch(OVERPASS[i]+'?data='+encodeURIComponent(q),{signal:ctrl.signal})
+  var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},25000);
+  return fetch(OVERPASS[i],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctrl.signal})
     .then(function(r){ clearTimeout(to); if(!r.ok) throw 0; return r.json(); })
     .catch(function(){ clearTimeout(to); return overpass(q,i+1); }); }
 function gmapsFood(p){ return 'https://www.google.com/maps/search/restaurants/@'+p.la+','+p.lo+',14z'; }
@@ -169,7 +169,7 @@ function loadFood(pts){
     }).join('');
   }
   // concurrency-limited parallel (fast, but capped so Overpass doesn't rate-limit); cached per airport
-  var qi=0, active=0, LIMIT=3;
+  var qi=0, active=0, LIMIT=2;   // overpass-api.de allows only 2 parallel queries per IP
   function pump(){
     while(active<LIMIT && qi<fields.length){
       (function(p){ active++;
