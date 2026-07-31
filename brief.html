@@ -107,9 +107,12 @@ function buildMap(pts){
   setTimeout(function(){ if(BMAP) BMAP.invalidateSize(); },250);
 }
 
+function dedupeRoute(ids){ var o=ids.slice();
+  for(var k=Math.floor(o.length/2); k>=1; k--){ var same=true; for(var j=0;j<k;j++){ if(o[j]!==o[k+j]){same=false;break;} } if(same){ o=o.slice(0,k).concat(o.slice(2*k)); break; } }
+  var out=[]; for(var i=0;i<o.length;i++){ if(i===0||o[i]!==o[i-1]) out.push(o[i]); } return out; }
 function render(routeStr){
   var out=document.getElementById('out'); saveAC();
-  var ids=(routeStr||'').trim().toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  var ids=dedupeRoute((routeStr||'').trim().toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
   var pts=[],miss=[]; ids.forEach(function(id){var a=resolve(id);if(a)pts.push({id:id,la:a[0],lo:a[1],name:a[2],el:a[3],fuel:a[4]});else miss.push(id);});
   if(pts.length<2){out.innerHTML='<h1>Enter a route</h1><p class="sub">Type ≥2 identifiers and press Update.'+(miss.length?' Unknown: '+miss.join(', '):'')+'</p>';return;}
   setRoute(pts.map(function(p){return p.id;}).join(' '));
@@ -141,35 +144,45 @@ var OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.s
 var FOOD_AMEN='^(restaurant|cafe|fast_food|pub|bar|biergarten|food_court)$';
 function foodQuery(la,lo){ var a='["amenity"~"'+FOOD_AMEN+'"](around:1609,'+la+','+lo+');'; return '[out:json][timeout:60];(node'+a+'way'+a+'relation'+a+');out center tags;'; }
 function overpass(q,i){ i=i||0; if(i>=OVERPASS.length) return Promise.reject(new Error('all endpoints failed'));
-  var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},20000);
-  return fetch(OVERPASS[i]+'?data='+encodeURIComponent(q),{signal:ctrl.signal})
+  var ctrl=new AbortController(), to=setTimeout(function(){ctrl.abort();},25000);
+  return fetch(OVERPASS[i],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctrl.signal})
     .then(function(r){ clearTimeout(to); if(!r.ok) throw 0; return r.json(); })
     .catch(function(){ clearTimeout(to); return overpass(q,i+1); }); }
 function gmapsFood(p){ return 'https://www.google.com/maps/search/restaurants/@'+p.la+','+p.lo+',14z'; }
 function foodLabel(am){ return am==='cafe'?'café':(am==='fast_food'?'fast food':((am==='pub'||am==='bar'||am==='food_court')?am.replace('_',' '):'restaurant')); }
+var FOOD_CACHE={};
 function loadFood(pts){
   var box=document.getElementById('food'); if(!box) return;
-  var fields=pts.filter(function(p){return p.la!=null&&p.lo!=null;});
+  var all=pts.filter(function(p){return p.la!=null&&p.lo!=null;});
+  var seen={}, fields=[]; all.forEach(function(p){ if(!seen[p.id]){seen[p.id]=1;fields.push(p);} });  // unique airports only
   box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~1 sm (OpenStreetMap, incl. on-field) — verify, or cross-check <a class="inline" href="https://www.100dollarhamburger.com/" target="_blank">$100 Hamburger ↗</a>.</div>';
   var rows={};
   fields.forEach(function(p){ var blk=document.createElement('div'); blk.className='wxrow'; blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>'; box.appendChild(blk); rows[p.id]=blk; });
-  // sequential — one Overpass request at a time so the public server doesn't rate-limit/hang us
-  var i=0;
-  function next(){
-    if(i>=fields.length) return;
-    var p=fields[i++], blk=rows[p.id];
-    // browser-side (your IP) — Overpass blocks datacenter IPs, so this must NOT go through a server proxy
-    overpass(foodQuery(p.la,p.lo)).then(function(j){
-      var near=(j.elements||[]).map(function(el){ var la=el.lat!=null?el.lat:(el.center&&el.center.lat), lo=el.lon!=null?el.lon:(el.center&&el.center.lon); var t=el.tags||{}; var nm=t.name||t.brand; return (nm&&la!=null)?{name:nm,amenity:t.amenity||'restaurant',cuisine:t.cuisine||'',d:smDist(p.la,p.lo,la,lo)}:null; }).filter(Boolean).filter(function(x){return x.d<=1.05;});
-      near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,8);
-      if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 1 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; return; }
-      blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){
-        var c=x.cuisine?(' · '+nesc(x.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
-        return '<span class="raw">'+nesc(x.name)+' <span style="color:#889">('+foodLabel(x.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
-      }).join('');
-    }).catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; }).then(next,next);
+  function renderField(p,places){
+    var blk=rows[p.id]; if(!blk) return;
+    var near=(places||[]).map(function(e){return {e:e,d:smDist(p.la,p.lo,e.lat,e.lon)};}).filter(function(x){return x.d<=1.05;});
+    near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,8);
+    if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 1 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; return; }
+    blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.e;
+      var c=e.cuisine?(' · '+nesc(e.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
+      return '<span class="raw">'+nesc(e.name)+' <span style="color:#889">('+foodLabel(e.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
+    }).join('');
   }
-  next();
+  // concurrency-limited parallel (fast, but capped so Overpass doesn't rate-limit); cached per airport
+  var qi=0, active=0, LIMIT=2;   // overpass-api.de allows only 2 parallel queries per IP
+  function pump(){
+    while(active<LIMIT && qi<fields.length){
+      (function(p){ active++;
+        var done=function(){ active--; pump(); };
+        if(FOOD_CACHE[p.id]){ renderField(p,FOOD_CACHE[p.id]); return done(); }
+        overpass(foodQuery(p.la,p.lo)).then(function(j){
+          var places=(j.elements||[]).map(function(el){ var la=el.lat!=null?el.lat:(el.center&&el.center.lat), lo=el.lon!=null?el.lon:(el.center&&el.center.lon); var t=el.tags||{}; var nm=t.name||t.brand; return (nm&&la!=null)?{name:nm,amenity:t.amenity||'restaurant',cuisine:t.cuisine||'',lat:la,lon:lo}:null; }).filter(Boolean);
+          FOOD_CACHE[p.id]=places; renderField(p,places);
+        }).catch(function(){ var blk=rows[p.id]; if(blk) blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; }).then(done,done);
+      })(fields[qi++]);
+    }
+  }
+  pump();
 }
 
 function legTimes(useWind){ // returns {gs:[],hr:[],burn:[],startMs:[],comp:[],wind:[]}
@@ -260,7 +273,7 @@ function loadWinds(){
       if(!cols.some(function(c){return c[0]===S.lv[0];})) cols.push([S.lv[0],S.lv[2]]);
       var T=legTimes(true),th='<table><tr><th>Leg</th><th>@</th>'+cols.map(function(c){return '<th class="'+(c[0]===S.lv[0]?'hl':'')+'">'+(c[0]===S.lv[0]?'★':'')+c[1]+'</th>';}).join('')+'</tr>';
       S.legs.forEach(function(L,idx){ var wa=WINDARR[idx]; if(!wa){return;} var ix=wa.time.indexOf(hourStr(T.startMs[idx]));if(ix<0)ix=0;
-        th+='<tr><td>'+S.pts[idx].id+'–'+S.pts[idx+1].id+'</td><td>'+hhmmZ(T.startMs[idx])+'</td>'+cols.map(function(c){var dr=wa['wd'+c[0]],sp=wa['ws'+c[0]];var v=(dr&&dr[ix]!=null)?Math.round(dr[ix])+'°/'+Math.round(sp[ix])+'kt':'—';return '<td class="'+(c[0]===S.lv[0]?'hl':'')+'">'+v+'</td>';}).join('')+'</tr>';});
+        th+='<tr><td>'+S.pts[idx].id+'–'+S.pts[idx+1].id+'</td><td>'+hhmmZ(T.startMs[idx])+'</td>'+cols.map(function(c){var dr=wa['wd'+c[0]],sp=wa['ws'+c[0]],tp=wa['t'+c[0]];var v=(dr&&dr[ix]!=null)?Math.round(dr[ix])+'°/'+Math.round(sp[ix])+'kt'+(tp&&tp[ix]!=null?'<br><span style="color:#889">'+Math.round(tp[ix])+'°C</span>':''):'—';return '<td class="'+(c[0]===S.lv[0]?'hl':'')+'">'+v+'</td>';}).join('')+'</tr>';});
       th+='</table><div class="sub">★ cruise level ('+S.lv[2]+'). Winds shown at each leg\'s time.</div>';
       document.getElementById('wind').innerHTML=th;
     }).catch(function(){document.getElementById('wind').innerHTML='<span style="color:#889">winds unavailable — legs zero-wind</span>';});
