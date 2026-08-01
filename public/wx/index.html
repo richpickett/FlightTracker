@@ -310,17 +310,24 @@ function rvPathFor(d){
   return (best && bestDiff<=12*60000) ? best.path : null;
 }
 function iemUrl(d){ return 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-'+stampUTC(d)+'/{z}/{x}/{y}.png'; }
-function radarTileUrl(d){
+// Radar uses TWO layers because the sources have different native-zoom limits:
+// RainViewer serves clean tiles at every zoom; IEM's composite tops out ~z8
+// (z10+ returns a "Zoom Level Not Supported" tile). Per frame, exactly one
+// carries real tiles and the other is transparent — no add/remove flicker.
+function setRadarFrame(d){
   var p=rvPathFor(d);
-  if(p) return RV.host+p+'/256/{z}/{x}/{y}/6/1_1.png';
-  // no RainViewer coverage: past frames fall back to IEM N0Q; future frames go transparent
-  return (d.getTime()<=Date.now()) ? iemUrl(d) : TRANSPARENT;
+  if(p){ rvLayer.setUrl(RV.host+p+'/256/{z}/{x}/{y}/6/1_1.png'); iemLayer.setUrl(TRANSPARENT); }
+  else if(d.getTime()<=Date.now()){ iemLayer.setUrl(iemUrl(d)); rvLayer.setUrl(TRANSPARENT); }
+  else { rvLayer.setUrl(TRANSPARENT); iemLayer.setUrl(TRANSPARENT); }   // future w/o nowcast
 }
 // GOES-East Band 13 Clean IR via NASA GIBS (reliable, CORS). ~35-min lag, times on 10-min marks.
 function satTime(d){ var t=new Date(d.getTime()-35*60000); t.setUTCMinutes(Math.floor(t.getUTCMinutes()/10)*10,0,0); return t.toISOString().split('.')[0]+'Z'; }
 function satUrl(d){ return 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_Band13_Clean_Infrared/default/'+satTime(d)+'/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png'; }
 
-var radarLayer = L.tileLayer(TRANSPARENT,{opacity:.8,maxZoom:12,zIndex:400,crossOrigin:true,errorTileUrl:TRANSPARENT});
+var rvLayer  = L.tileLayer(TRANSPARENT,{opacity:.8,maxZoom:12,zIndex:400,crossOrigin:true,errorTileUrl:TRANSPARENT});
+var iemLayer = L.tileLayer(TRANSPARENT,{opacity:.8,maxZoom:12,maxNativeZoom:8,zIndex:400,crossOrigin:true,errorTileUrl:TRANSPARENT}); // IEM composite maxes ~z8; upscale beyond
+var radarOn  = true;
+function radarShow(on){ radarOn=on; if(on){ rvLayer.addTo(map); iemLayer.addTo(map); setRadarFrame(frames[cur]); } else { map.removeLayer(rvLayer); map.removeLayer(iemLayer); } }
 var satLayer   = L.tileLayer(satUrl(frames[frames.length-1]),{opacity:.72,maxZoom:12,maxNativeZoom:6,zIndex:390,crossOrigin:true,errorTileUrl:TRANSPARENT});
 var echoLayer  = L.tileLayer.wms('https://opengeo.ncep.noaa.gov/geoserver/conus/conus_neet_v18/ows?',{
   layers:'conus_neet_v18',format:'image/png',transparent:true,version:'1.3.0',opacity:.75,zIndex:410,crossOrigin:true});
@@ -406,7 +413,7 @@ function metarFallback(id){
 var cur=NFRAMES-1;
 function applyFrame(i){
   cur=i; var d=frames[i];
-  if(map.hasLayer(radarLayer)) radarLayer.setUrl(radarTileUrl(d));
+  if(radarOn) setRadarFrame(d);
   if(map.hasLayer(satLayer))   satLayer.setUrl(satUrl(d));
   if(map.hasLayer(echoLayer))  echoLayer.setParams({time:isoUTC(d)});
   document.getElementById('frame').value=i;
@@ -439,7 +446,8 @@ function bindLayer(cb,op,layer){
   });
   document.getElementById(op).addEventListener('input',function(e){ layer.setOpacity(e.target.value/100); });
 }
-bindLayer('c-radar','o-radar',radarLayer);
+document.getElementById('c-radar').addEventListener('change',function(e){ radarShow(e.target.checked); });
+document.getElementById('o-radar').addEventListener('input',function(e){ var o=e.target.value/100; rvLayer.setOpacity(o); iemLayer.setOpacity(o); });
 bindLayer('c-echo','o-echo',echoLayer);
 bindLayer('c-sat','o-sat',satLayer);
 document.getElementById('c-metar').addEventListener('change',function(e){ if(e.target.checked) metarGroup.addTo(map); else map.removeLayer(metarGroup); });
@@ -771,7 +779,7 @@ document.getElementById('briefprint').addEventListener('click',function(){ windo
 setInterval(function(){ document.getElementById('clock').textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+' local'; },30000);
 
 // ---------- init ----------
-radarLayer.addTo(map);
+radarShow(true);
 applyFrame(NFRAMES-1);
 loadRV(function(){ applyFrame(cur); });
 loadMetars();
