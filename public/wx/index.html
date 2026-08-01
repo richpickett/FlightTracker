@@ -321,7 +321,10 @@ function setRadarFrame(d){
 function satTime(d){ var t=new Date(d.getTime()-35*60000); t.setUTCMinutes(Math.floor(t.getUTCMinutes()/10)*10,0,0); return t.toISOString().split('.')[0]+'Z'; }
 function satUrl(d){ return 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_Band13_Clean_Infrared/default/'+satTime(d)+'/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png'; }
 
-var rvLayer  = L.tileLayer(TRANSPARENT,{opacity:.8,maxZoom:12,zIndex:400,crossOrigin:true,errorTileUrl:TRANSPARENT});
+// RainViewer's free public tilecache only serves to zoom 7; z8+ returns a gray
+// "Zoom Level Not Supported" placeholder. Cap native zoom at 7 so Leaflet upscales
+// the z7 tile when zoomed in rather than requesting the unsupported (broken) zooms.
+var rvLayer  = L.tileLayer(TRANSPARENT,{opacity:.8,maxZoom:12,maxNativeZoom:7,zIndex:400,crossOrigin:true,errorTileUrl:TRANSPARENT});
 var radarOn  = true;
 function radarShow(on){ radarOn=on; if(on){ rvLayer.addTo(map); setRadarFrame(frames[cur]); } else { map.removeLayer(rvLayer); } }
 var satLayer   = L.tileLayer(satUrl(frames[frames.length-1]),{opacity:.72,maxZoom:12,maxNativeZoom:6,zIndex:390,crossOrigin:true,errorTileUrl:TRANSPARENT});
