@@ -290,12 +290,28 @@ var TRANSPARENT='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1H
 // zoom ceiling), transparent where no precip, and time-enabled (~4-min scans, hours of
 // history). GeoServer nearest-matches the requested TIME to the closest available scan.
 var RADAR_WMS='https://nowcoast.noaa.gov/geoserver/observations/weather_radar/wms';
-var radarLayer = L.tileLayer.wms(RADAR_WMS,{
-  layers:'conus_base_reflectivity_mosaic', format:'image/png', transparent:true,
-  version:'1.3.0', opacity:.8, zIndex:400, crossOrigin:true, errorTileUrl:TRANSPARENT });
-var radarOn = true;
-function radarShow(on){ radarOn=on; if(on){ radarLayer.addTo(map); setRadarFrame(frames[cur]); } else { map.removeLayer(radarLayer); } }
-function setRadarFrame(d){ radarLayer.setParams({time:isoUTC(d)}); }
+var RADAR_OPTS={ layers:'conus_base_reflectivity_mosaic', format:'image/png', transparent:true,
+  version:'1.3.0', zIndex:400, crossOrigin:true, errorTileUrl:TRANSPARENT };
+// Double-buffered so animation doesn't blink: the hidden ("back") layer loads the next
+// frame underneath, then we cross-fade to it and reuse the old one for the following frame.
+// (A single WMS layer clears its tiles on every setParams → the flash you were seeing.)
+var radarA = L.tileLayer.wms(RADAR_WMS, Object.assign({opacity:.8}, RADAR_OPTS));
+var radarB = L.tileLayer.wms(RADAR_WMS, Object.assign({opacity:0 }, RADAR_OPTS));
+var radarFront=radarA, radarBack=radarB, radarOp=.8, radarGen=0, radarOn=true;
+function radarShow(on){
+  radarOn=on;
+  if(on){ radarA.addTo(map); radarB.addTo(map); setRadarFrame(frames[cur]); }
+  else { map.removeLayer(radarA); map.removeLayer(radarB); }
+}
+function setRadarFrame(d){
+  var gen=++radarGen, back=radarBack;
+  back.once('load',function(){
+    if(gen!==radarGen) return;                 // a newer frame superseded this one
+    back.setOpacity(radarOp); radarFront.setOpacity(0);
+    var t=radarFront; radarFront=radarBack; radarBack=t;
+  });
+  back.setParams({time:isoUTC(d)});
+}
 
 // GOES-East Band 13 Clean IR via NASA GIBS (reliable, CORS). ~35-min lag, times on 10-min marks.
 function satTime(d){ var t=new Date(d.getTime()-35*60000); t.setUTCMinutes(Math.floor(t.getUTCMinutes()/10)*10,0,0); return t.toISOString().split('.')[0]+'Z'; }
@@ -421,7 +437,7 @@ function bindLayer(cb,op,layer){
   document.getElementById(op).addEventListener('input',function(e){ layer.setOpacity(e.target.value/100); });
 }
 document.getElementById('c-radar').addEventListener('change',function(e){ radarShow(e.target.checked); document.getElementById('lg-radar').style.display=e.target.checked?'':'none'; });
-document.getElementById('o-radar').addEventListener('input',function(e){ radarLayer.setOpacity(e.target.value/100); });
+document.getElementById('o-radar').addEventListener('input',function(e){ radarOp=e.target.value/100; radarFront.setOpacity(radarOp); });
 bindLayer('c-echo','o-echo',echoLayer);
 document.getElementById('c-echo').addEventListener('change',function(e){ document.getElementById('lg-echo').style.display=e.target.checked?'':'none'; });
 bindLayer('c-light','o-light',lightLayer);
@@ -526,9 +542,19 @@ var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsb
 function resetAdsb(){ if(adsbMarker){adsbGroup.removeLayer(adsbMarker);adsbMarker=null;} if(adsbTrail){adsbGroup.removeLayer(adsbTrail);adsbTrail=null;} trailPts=[]; }
 function planeIcon(track,color){
   var rot=(track==null||isNaN(track))?0:track;
+  // Rotate via CSS transform on a wrapper <div> (Safari-reliable) rather than an SVG
+  // <g transform> attribute, which Safari can drop when the SVG is a Leaflet divIcon.
   return L.divIcon({className:'',iconSize:[34,34],iconAnchor:[17,17],
-    html:'<svg class="ownship" width="34" height="34" viewBox="0 0 34 34"><g transform="rotate('+rot+' 17 17)">'+
-      '<path d="M17 2 L19.5 14 L31 20 L31 23 L19.5 19 L18.5 27 L23 30.5 L23 31.5 L17 29.5 L11 31.5 L11 30.5 L15.5 27 L14.5 19 L3 23 L3 20 L14.5 14 Z" fill="'+color+'" stroke="#3a2a00" stroke-width="0.8"/></g></svg>'});
+    html:'<div style="width:34px;height:34px;transform:rotate('+rot+'deg);transform-origin:50% 50%">'+
+      '<svg class="ownship" width="34" height="34" viewBox="0 0 34 34">'+
+      '<path d="M17 2 L19.5 14 L31 20 L31 23 L19.5 19 L18.5 27 L23 30.5 L23 31.5 L17 29.5 L11 31.5 L11 30.5 L15.5 27 L14.5 19 L3 23 L3 20 L14.5 14 Z" fill="'+color+'" stroke="#3a2a00" stroke-width="0.8"/></svg></div>'});
+}
+// great-circle bearing a->b (deg), used as a heading fallback when ADS-B track is absent
+function bearingDeg(a,b){
+  var la1=a[0]*Math.PI/180, la2=b[0]*Math.PI/180, dlo=(b[1]-a[1])*Math.PI/180;
+  var y=Math.sin(dlo)*Math.cos(la2);
+  var x=Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dlo);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
 function fetchADSB(){
   var st=document.getElementById('adsb-status');
@@ -546,17 +572,20 @@ function fetchADSB(){
     var flight=(ac.flight||'').trim(), reg=(ac.r||'').trim();
     var name=flight||reg||REG, sub=(reg&&reg!==name)?reg:'';
     var ll=[ac.lat,ac.lon];
-    if(!adsbMarker){ adsbMarker=L.marker(ll,{icon:planeIcon(ac.track,'#ffb14a'),zIndexOffset:1100}).addTo(adsbGroup).bindPopup(name)
-      .bindTooltip('',{permanent:true,direction:'right',offset:[13,0],className:'ac-label'}); }
-    else { adsbMarker.setLatLng(ll).setIcon(planeIcon(ac.track,'#ffb14a')); }
+    // heading: ADS-B track → true/mag heading → bearing from last position
+    var hdg = ac.track!=null?ac.track:(ac.true_heading!=null?ac.true_heading:(ac.mag_heading!=null?ac.mag_heading:null));
     var last=trailPts[trailPts.length-1];
+    if(hdg==null && last && (last[0]!==ll[0]||last[1]!==ll[1])) hdg=bearingDeg(last,ll);
+    if(!adsbMarker){ adsbMarker=L.marker(ll,{icon:planeIcon(hdg,'#ffb14a'),zIndexOffset:1100}).addTo(adsbGroup).bindPopup(name)
+      .bindTooltip('',{permanent:true,direction:'right',offset:[13,0],className:'ac-label'}); }
+    else { adsbMarker.setLatLng(ll).setIcon(planeIcon(hdg,'#ffb14a')); }
     if(!last || last[0]!==ll[0] || last[1]!==ll[1]){ trailPts.push(ll); if(trailPts.length>500) trailPts.shift(); }
     if(!adsbTrail){ adsbTrail=L.polyline(trailPts,{color:'#ffb14a',weight:2,opacity:.65}).addTo(adsbGroup); } else { adsbTrail.setLatLngs(trailPts); }
     var alt=ac.alt_baro==null?'—':(ac.alt_baro==='ground'?'GND':Math.round(ac.alt_baro).toLocaleString()+'′');
     var vs=ac.baro_rate==null?'':(' · '+(ac.baro_rate>=0?'+':'')+Math.round(ac.baro_rate)+' fpm');
     var age=ac.seen_pos!=null?Math.round(ac.seen_pos)+'s ago':'';
-    adsbMarker.setPopupContent('<b>'+name+'</b>'+(sub?' '+sub:'')+' ('+(ac.t||'')+')<br>'+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+'<br><span style="color:#888">'+age+'</span>');
-    if(st) st.innerHTML='<b style="color:#ffb14a">✈ '+name+'</b>'+(sub?' '+sub:'')+' '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+' <span style="color:#7f8fa0">('+age+')</span>';
+    adsbMarker.setPopupContent('<b>'+name+'</b>'+(sub?' '+sub:'')+' ('+(ac.t||'')+')<br>'+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(hdg!=null?' · '+Math.round(hdg)+'°':'')+vs+'<br><span style="color:#888">'+age+'</span>');
+    if(st) st.innerHTML='<b style="color:#ffb14a">✈ '+name+'</b>'+(sub?' '+sub:'')+' '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(hdg!=null?' · '+Math.round(hdg)+'°':'')+vs+' <span style="color:#7f8fa0">('+age+')</span>';
     adsbMarker.setTooltipContent(name+' · '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':''));
     if(adsbFollow){ map.panTo(ll,{animate:false}); }
   }).catch(function(){ if(st) st.textContent=REG+': ADS-B feed unavailable'; });
