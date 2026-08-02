@@ -191,7 +191,7 @@
     </label>
     <span id="wind-status" style="font-size:11px;color:var(--dim)"></span>
     <span style="flex:1"></span>
-    <div class="lyr"><input type="checkbox" id="c-adsb" checked><label for="c-adsb"><span class="sw" style="background:#ffb14a"></span>Track</label><input id="regin" placeholder="N13709" title="Tail # to track (ADS-B)" autocomplete="off" spellcheck="false" style="width:80px;text-transform:uppercase;background:#f7faff;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px"></div>
+    <div class="lyr"><input type="checkbox" id="c-adsb" checked><label for="c-adsb"><span class="sw" style="background:#ffb14a"></span>Track</label><input id="regin" placeholder="N13709 / UAL1093" title="Tail # or flight number to track (ADS-B)" autocomplete="off" spellcheck="false" style="width:80px;text-transform:uppercase;background:#f7faff;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px"></div>
     <label class="toggle"><input type="checkbox" id="follow-adsb"> follow ac</label>
     <button id="gps">◎ GPS</button>
     <label class="toggle"><input type="checkbox" id="follow"> me</label>
@@ -518,12 +518,22 @@ function planeIcon(track,color){
       '<path d="M17 2 L19.5 14 L31 20 L31 23 L19.5 19 L18.5 27 L23 30.5 L23 31.5 L17 29.5 L11 31.5 L11 30.5 L15.5 27 L14.5 19 L3 23 L3 20 L14.5 14 Z" fill="'+color+'" stroke="#3a2a00" stroke-width="0.8"/></g></svg>'});
 }
 function fetchADSB(){
-  if(!REG){ var s0=document.getElementById('adsb-status'); if(s0) s0.textContent='Enter a tail # to track'; return; }
-  fetch('https://api.airplanes.live/v2/reg/'+encodeURIComponent(REG)).then(function(r){return r.json();}).then(function(j){
-    var ac=(j.ac||[])[0], st=document.getElementById('adsb-status');
-    if(!ac || ac.lat==null){ if(st) st.textContent=REG+': no ADS-B contact (on ground / out of coverage)'; return; }
+  var st=document.getElementById('adsb-status');
+  if(!REG){ if(st) st.textContent='Enter a tail # or flight number to track'; return; }
+  var q=encodeURIComponent(REG);
+  // Query BOTH registration and callsign — a tail (N13709) matches /reg/, an airline
+  // flight number (UAL1093) matches /callsign/. Prefer a positioned reg hit, else callsign.
+  Promise.all([
+    fetch('https://api.airplanes.live/v2/reg/'+q).then(function(r){return r.json();}).catch(function(){return {};}),
+    fetch('https://api.airplanes.live/v2/callsign/'+q).then(function(r){return r.json();}).catch(function(){return {};})
+  ]).then(function(res){
+    function pick(j){ var a=(j&&j.ac)||[]; for(var i=0;i<a.length;i++){ if(a[i].lat!=null) return a[i]; } return null; }
+    var ac=pick(res[0])||pick(res[1]);
+    if(!ac){ if(st) st.textContent=REG+': no ADS-B contact (on ground / out of coverage)'; return; }
+    var flight=(ac.flight||'').trim(), reg=(ac.r||'').trim();
+    var name=flight||reg||REG, sub=(reg&&reg!==name)?reg:'';
     var ll=[ac.lat,ac.lon];
-    if(!adsbMarker){ adsbMarker=L.marker(ll,{icon:planeIcon(ac.track,'#ffb14a'),zIndexOffset:1100}).addTo(adsbGroup).bindPopup(REG)
+    if(!adsbMarker){ adsbMarker=L.marker(ll,{icon:planeIcon(ac.track,'#ffb14a'),zIndexOffset:1100}).addTo(adsbGroup).bindPopup(name)
       .bindTooltip('',{permanent:true,direction:'right',offset:[13,0],className:'ac-label'}); }
     else { adsbMarker.setLatLng(ll).setIcon(planeIcon(ac.track,'#ffb14a')); }
     var last=trailPts[trailPts.length-1];
@@ -532,11 +542,11 @@ function fetchADSB(){
     var alt=ac.alt_baro==null?'—':(ac.alt_baro==='ground'?'GND':Math.round(ac.alt_baro).toLocaleString()+'′');
     var vs=ac.baro_rate==null?'':(' · '+(ac.baro_rate>=0?'+':'')+Math.round(ac.baro_rate)+' fpm');
     var age=ac.seen_pos!=null?Math.round(ac.seen_pos)+'s ago':'';
-    adsbMarker.setPopupContent('<b>'+REG+'</b> ('+(ac.t||'')+')<br>'+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+'<br><span style="color:#888">'+age+'</span>');
-    if(st) st.innerHTML='<b style="color:#ffb14a">✈ '+REG+'</b> '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+' <span style="color:#7f8fa0">('+age+')</span>';
-    if(adsbMarker) adsbMarker.setTooltipContent(REG+' · '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':''));
+    adsbMarker.setPopupContent('<b>'+name+'</b>'+(sub?' '+sub:'')+' ('+(ac.t||'')+')<br>'+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+'<br><span style="color:#888">'+age+'</span>');
+    if(st) st.innerHTML='<b style="color:#ffb14a">✈ '+name+'</b>'+(sub?' '+sub:'')+' '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':'')+(ac.track!=null?' · '+Math.round(ac.track)+'°':'')+vs+' <span style="color:#7f8fa0">('+age+')</span>';
+    adsbMarker.setTooltipContent(name+' · '+alt+(ac.gs!=null?' · '+Math.round(ac.gs)+' kt':''));
     if(adsbFollow){ map.panTo(ll,{animate:false}); }
-  }).catch(function(){ var st=document.getElementById('adsb-status'); if(st) st.textContent=REG+': ADS-B feed unavailable'; });
+  }).catch(function(){ if(st) st.textContent=REG+': ADS-B feed unavailable'; });
 }
 function startADSB(){ if(!map.hasLayer(adsbGroup)) adsbGroup.addTo(map); fetchADSB(); clearInterval(adsbTimer); adsbTimer=setInterval(fetchADSB,10000); }
 function stopADSB(){ clearInterval(adsbTimer); adsbTimer=null; if(map.hasLayer(adsbGroup)) map.removeLayer(adsbGroup); }
@@ -551,7 +561,7 @@ function setReg(v,explicit){
   var lbl=v||'—';
   var h1=document.querySelector('#hdr h1'); if(h1){ h1.innerHTML = (STATIONS&&STATIONS.length>1) ? (lbl+' · '+STATIONS.map(function(s){return s[0];}).join(' → ')) : (lbl+' · live tracking'); }
   resetAdsb();
-  var st=document.getElementById('adsb-status'); if(st) st.textContent = v ? (v+': acquiring ADS-B…') : 'Enter a tail # to track';
+  var st=document.getElementById('adsb-status'); if(st) st.textContent = v ? (v+': acquiring ADS-B…') : 'Enter a tail # or flight number to track';
   try{ history.replaceState(null,'',shareURL()); }catch(e){}
   if(v && map.hasLayer(adsbGroup)) fetchADSB();
 }

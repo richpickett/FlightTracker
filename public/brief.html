@@ -36,7 +36,7 @@
     <span class="ac">tail<input id="reg" type="text" placeholder="N123AB" style="width:84px;text-transform:uppercase"></span>
     <span class="ac">date<input id="depdate" type="date" style="width:132px"></span>
     <span class="ac">dep<input id="dep" type="text" placeholder="HHMM"><select id="deptz"><option value="L">Lcl</option><option value="Z">UTC</option></select>
-      cruise ft<input id="cruise" type="number" value="10000"> TAS<input id="tas" type="number" value="145"> usable<input id="usable" type="number" value="87"> gph<input id="gph" type="number" value="18"> rsv<input id="rsv" type="number" value="45"></span>
+      cruise ft<input id="cruise" type="number" value="10000"> TAS<input id="tas" type="number" value="145"> usable<input id="usable" type="number" value="87"> FF<input id="gph" type="number" value="18" title="Fuel flow per hour (gal/hr or lb/hr — keep units consistent with 'usable')"> rsv<input id="rsv" type="number" value="45"></span>
     <button id="go">Update</button><button id="print" class="sec">Print</button><a id="pw-acct-slot" style="cursor:pointer">👤 Sign in</a>
   </div>
   <div id="out"><p class="sub">Loading airport database…</p></div>
@@ -125,7 +125,7 @@ function render(routeStr){
   var regv=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   var h='<h1>'+(regv?regv+' · ':'')+pts.map(function(p){return p.id;}).join(' → ')+'</h1>';
   h+='<div class="sub">'+pts.map(function(p){return p.name;}).join(' · ')+'</div>';
-  h+='<div class="sub">'+(regv?'<b>'+regv+'</b> · ':'')+depTxt+' · cruise <b>'+CR.toLocaleString()+'′</b> (~'+STATE.lv[2]+') · TAS '+TAS+' · '+USABLE+' gal / '+GPH+' gph · '+(pts.length-1)+' legs'+(miss.length?' · <span style="color:#c00">unknown: '+miss.join(', ')+'</span>':'')+'</div>';
+  h+='<div class="sub">'+(regv?'<b>'+regv+'</b> · ':'')+depTxt+' · cruise <b>'+CR.toLocaleString()+'′</b> (~'+STATE.lv[2]+') · TAS '+TAS+' · '+USABLE+' usable / '+GPH+' FF · '+(pts.length-1)+' legs'+(miss.length?' · <span style="color:#c00">unknown: '+miss.join(', ')+'</span>':'')+'</div>';
   h+='<h2>Route</h2><div id="mapwrap"><div id="bmap"></div><div class="mapleg" id="mapleg"></div></div><div id="narr"></div><div id="ov"></div><h2>Legs</h2><div id="legsec"></div><div id="condsum"></div>';
   h+='<h2>Current conditions &amp; TAF</h2><div id="wx"></div>';
   h+='<h2>NOTAMs</h2><div id="notams" class="sub">'+(CFG.notamProxy?'loading…':'Live NOTAMs not configured — use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a> or 1800wxbrief.')+'</div>';
