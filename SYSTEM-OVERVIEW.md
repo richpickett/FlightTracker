@@ -17,7 +17,7 @@ _Last updated: 2026-07-26._
 
 | Page | File | What it does |
 |------|------|--------------|
-| Live map | `public/wx/index.html` | Route entry, radar/echo-tops/satellite (4 hr loop), METARs, winds aloft, live ADS-B for N13709, GPS own-ship, **Share** (link/email/text), **New route**, in-app briefing, account sign-in. |
+| Live map | `public/wx/index.html` | Route entry, radar (MRMS/nowCOAST) / echo-tops / satellite (4 hr loop) with matching legends, METARs, winds aloft, live ADS-B for N13709, GPS own-ship, **Share** (link/email/text), **New route**, in-app briefing, account sign-in. |
 | Briefing | `public/brief.html` | Route-synced briefing: departure **date** + time, cruise altitude, wind-corrected legs, ETAs, fuel burn/reserve, METAR+TAF per field, winds/temps aloft, best-altitude, ISA-dev, fuel type per field, NOTAMs, food nearby (OpenStreetMap), embedded map + SPC overlay. |
 | Account widget | `public/pwauth.js` | Loaded on map + briefing. Sign in / create account / forgot password, and per-user saved routes. Entry point is the **"👤 Sign in"** link in each page's header. |
 | Notify users | `public/admin.html` | Compose + send an email blast to all users. Count-recipients dry run, send-test-to-me, send-to-all. Admin-key gated. |
@@ -38,7 +38,9 @@ _Last updated: 2026-07-26._
 
 ## Data sources (all browser-CORS-safe)
 
-Radar/satellite: Iowa Environmental Mesonet + NASA GIBS (GOES-East Band13 IR). Echo tops: NCEP MRMS WMS. METARs: api.weather.gov (NWS). Winds/temps aloft: Open-Meteo. ADS-B: airplanes.live. Convective outlook: SPC Day-1 GeoJSON. Airport DB: OurAirports + FAA NASR fuel types (`public/wx/airports.json`). TAFs: metar-taf.com via the `taf` function.
+Radar: **NOAA/MRMS base-reflectivity mosaic via nowCOAST GeoServer WMS** (`nowcoast.noaa.gov/geoserver/observations/weather_radar/wms`, layer `conus_base_reflectivity_mosaic`). Quality-controlled (clutter/AP largely removed), CORS-enabled, renders at any zoom, time-enabled (~4-min scans, several hours history — the 4-hr loop sets `TIME` per frame; GeoServer nearest-matches). Legend (dBZ) is a CSS gradient built from the source's own GetLegendGraphic colors. Satellite: NASA GIBS (GOES-East Band13 IR). Echo tops: NCEP MRMS WMS (`conus_neet_v18`), with a CSS legend matching its GetLegendGraphic. METARs: api.weather.gov (NWS). Winds/temps aloft: Open-Meteo. ADS-B: airplanes.live. Convective outlook: SPC Day-1 GeoJSON. Airport DB: OurAirports + FAA NASR fuel types (`public/wx/airports.json`). TAFs: metar-taf.com via the `taf` function.
+
+_Radar history note:_ Was RainViewer briefly (Jul 2026) — dropped because the free public tilecache only serves to zoom 7 (z8+ returns a "Zoom Level Not Supported" tile) and its nowcast feed was reliably empty. MRMS/nowCOAST is sharper, QC'd, and any-zoom. No forecast/nowcast frames currently (no reliable free forecast-reflectivity source; would need HRRR via a data proxy).
 
 ## Supabase (auth + database)
 
