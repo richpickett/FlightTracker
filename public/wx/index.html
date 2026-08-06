@@ -167,6 +167,16 @@
     <div class="lyr"><input type="checkbox" id="c-echo"><label for="c-echo"><span class="sw" style="background:#ff9000"></span>Echo tops</label><input type="range" id="o-echo" min="0" max="100" value="75"></div>
     <div class="lyr"><input type="checkbox" id="c-sat"><label for="c-sat"><span class="sw" style="background:#8899aa"></span>Satellite IR</label><input type="range" id="o-sat" min="0" max="100" value="70"></div>
     <div class="lyr"><input type="checkbox" id="c-light"><label for="c-light"><span class="sw" style="background:#b36bff"></span>Lightning</label><input type="range" id="o-light" min="0" max="100" value="85"></div>
+    <label class="toggle" title="FAA aeronautical charts (zoom in to see them)">Chart
+      <select id="chartsel">
+        <option value="" selected>None</option>
+        <option value="vfr">VFR Sectional</option>
+        <option value="tac">VFR Terminal (TAC)</option>
+        <option value="ifrlow">IFR Low</option>
+        <option value="ifrhigh">IFR High</option>
+      </select>
+    </label>
+    <input type="range" id="o-chart" min="0" max="100" value="100" title="Chart opacity" style="width:64px">
     <div class="lyr"><input type="checkbox" id="c-metar" checked><label for="c-metar">METAR</label></div>
     <label class="toggle">Base
       <select id="base"><option value="osm" selected>OpenStreetMap</option><option value="dark">Dark</option><option value="topo">Topo</option></select>
@@ -323,6 +333,25 @@ var echoLayer  = L.tileLayer.wms('https://opengeo.ncep.noaa.gov/geoserver/conus/
 var lightLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/geoserver/lightning_detection/wms',{
   layers:'lightning_detection:ldn_lightning_strike_density', format:'image/png', transparent:true,
   version:'1.3.0', opacity:.85, zIndex:405, crossOrigin:true, errorTileUrl:TRANSPARENT});
+// FAA aeronautical charts — official hosted ArcGIS tile caches (always current cycle). ArcGIS
+// tile order is {z}/{y}/{x}. Displayed as <img> tiles so no CORS needed. zIndex below weather so
+// radar draws on top of the chart. Each cache has its own zoom span (maxNativeZoom below; tiles
+// 404 outside the cache → transparent, so zoom in to see them; above native zoom Leaflet upscales).
+var CHART_BASE='https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/';
+var CHARTS={
+  vfr:     {svc:'VFR_Sectional', maxNative:12, label:'VFR Sectional (z8+)'},
+  tac:     {svc:'VFR_Terminal',  maxNative:12, label:'VFR Terminal — TAC (z10+, metro only)'},
+  ifrlow:  {svc:'IFR_AreaLow',   maxNative:12, label:'IFR Low (z8+)'},
+  ifrhigh: {svc:'IFR_High',      maxNative:9,  label:'IFR High (z5+)'}
+};
+var chartLayer=null, chartOp=1;
+function selectChart(key){
+  if(chartLayer){ map.removeLayer(chartLayer); chartLayer=null; }
+  var c=CHARTS[key]; if(!c) return;
+  chartLayer=L.tileLayer(CHART_BASE+c.svc+'/MapServer/tile/{z}/{y}/{x}',{
+    maxZoom:12, maxNativeZoom:c.maxNative, zIndex:300, opacity:chartOp,
+    errorTileUrl:TRANSPARENT, attribution:'Aeronautical charts © FAA'}).addTo(map);
+}
 
 // ---------- METAR markers ----------
 var metarGroup = L.layerGroup().addTo(map);
@@ -442,6 +471,8 @@ bindLayer('c-echo','o-echo',echoLayer);
 document.getElementById('c-echo').addEventListener('change',function(e){ document.getElementById('lg-echo').style.display=e.target.checked?'':'none'; });
 bindLayer('c-light','o-light',lightLayer);
 document.getElementById('c-light').addEventListener('change',function(e){ document.getElementById('lg-light').style.display=e.target.checked?'':'none'; });
+document.getElementById('chartsel').addEventListener('change',function(e){ selectChart(e.target.value); });
+document.getElementById('o-chart').addEventListener('input',function(e){ chartOp=e.target.value/100; if(chartLayer) chartLayer.setOpacity(chartOp); });
 bindLayer('c-sat','o-sat',satLayer);
 document.getElementById('c-metar').addEventListener('change',function(e){ if(e.target.checked) metarGroup.addTo(map); else map.removeLayer(metarGroup); });
 document.getElementById('base').addEventListener('change',function(e){ setBase(e.target.value); });
