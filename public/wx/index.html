@@ -89,6 +89,11 @@
   #legend .bar{height:10px;border-radius:2px;margin:3px 0 1px;border:1px solid #0000000f}
   #legend .ticks{display:flex;justify-content:space-between;color:var(--dim);font-size:9px;margin-top:1px}
   .note{color:var(--dim);font-size:10px;margin-top:5px;line-height:1.35}
+  #zoomind{position:fixed;left:10px;bottom:22px;z-index:1000;background:var(--panel);backdrop-filter:blur(6px);
+    border:1px solid var(--line);border-radius:8px;padding:3px 8px;font:600 12px ui-monospace,Menlo,Consolas,monospace;
+    color:var(--txt);box-shadow:0 1px 4px #0002}
+  #zoomind .zhint{font-weight:400;color:var(--dim)}
+  #zoomind .zbad{color:#c0392b}
   /* METAR markers */
   .stn{border-radius:6px;border:1.5px solid #fff;box-shadow:0 0 0 1px #0009;font:700 10px/1 -apple-system,Arial;
        color:#04121f;padding:2px 4px;white-space:nowrap;text-align:center}
@@ -106,6 +111,7 @@
 </head>
 <body>
 <div id="map"></div>
+<div id="zoomind">z—</div>
 
 <div id="hdr">
   <a href="/" class="hubback">← Ops Hub</a>
@@ -339,10 +345,10 @@ var lightLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/geoserver/lightning_
 // 404 outside the cache → transparent, so zoom in to see them; above native zoom Leaflet upscales).
 var CHART_BASE='https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/';
 var CHARTS={
-  vfr:     {svc:'VFR_Sectional', maxNative:12, label:'VFR Sectional (z8+)'},
-  tac:     {svc:'VFR_Terminal',  maxNative:12, label:'VFR Terminal — TAC (z10+, metro only)'},
-  ifrlow:  {svc:'IFR_AreaLow',   maxNative:12, label:'IFR Low (z8+)'},
-  ifrhigh: {svc:'IFR_High',      maxNative:9,  label:'IFR High (z5+)'}
+  vfr:     {svc:'VFR_Sectional', min:8,  maxNative:12, label:'VFR Sectional'},
+  tac:     {svc:'VFR_Terminal',  min:10, maxNative:12, label:'VFR Terminal (TAC, metro only)'},
+  ifrlow:  {svc:'IFR_AreaLow',   min:7,  maxNative:12, label:'IFR Low'},
+  ifrhigh: {svc:'IFR_High',      min:5,  maxNative:9,  label:'IFR High'}
 };
 var chartLayer=null, chartOp=1;
 function selectChart(key){
@@ -471,8 +477,20 @@ bindLayer('c-echo','o-echo',echoLayer);
 document.getElementById('c-echo').addEventListener('change',function(e){ document.getElementById('lg-echo').style.display=e.target.checked?'':'none'; });
 bindLayer('c-light','o-light',lightLayer);
 document.getElementById('c-light').addEventListener('change',function(e){ document.getElementById('lg-light').style.display=e.target.checked?'':'none'; });
-document.getElementById('chartsel').addEventListener('change',function(e){ selectChart(e.target.value); });
+document.getElementById('chartsel').addEventListener('change',function(e){ selectChart(e.target.value); updZoom(); });
 document.getElementById('o-chart').addEventListener('input',function(e){ chartOp=e.target.value/100; if(chartLayer) chartLayer.setOpacity(chartOp); });
+// zoom indicator (also flags whether the selected chart has tiles at this zoom — the usual reason it looks blank)
+function updZoom(){
+  var el=document.getElementById('zoomind'); if(!el) return;
+  var z=map.getZoom(), key=document.getElementById('chartsel').value, c=CHARTS[key], hint='';
+  if(c){
+    if(z<c.min) hint=' <span class="zbad">'+c.label+': zoom in to z'+c.min+'</span>';
+    else if(z>c.maxNative) hint=' <span class="zhint">'+c.label+': z'+c.maxNative+' upscaled</span>';
+    else hint=' <span class="zhint">'+c.label+' ✓</span>';
+  }
+  el.innerHTML='z'+z+hint;
+}
+map.on('zoom zoomend',updZoom); updZoom();
 bindLayer('c-sat','o-sat',satLayer);
 document.getElementById('c-metar').addEventListener('change',function(e){ if(e.target.checked) metarGroup.addTo(map); else map.removeLayer(metarGroup); });
 document.getElementById('base').addEventListener('change',function(e){ setBase(e.target.value); });
