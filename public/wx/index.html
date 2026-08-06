@@ -345,18 +345,30 @@ var lightLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/geoserver/lightning_
 // 404 outside the cache → transparent, so zoom in to see them; above native zoom Leaflet upscales).
 var CHART_BASE='https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/';
 var CHARTS={
-  vfr:     {svc:'VFR_Sectional', min:8,  maxNative:12, label:'VFR Sectional'},
+  vfr:     {svc:'VFR_Sectional', min:8,  maxNative:12, label:'VFR Sectional', plan:true},
   tac:     {svc:'VFR_Terminal',  min:10, maxNative:12, label:'VFR Terminal (TAC, metro only)'},
   ifrlow:  {svc:'IFR_AreaLow',   min:7,  maxNative:12, label:'IFR Low'},
   ifrhigh: {svc:'IFR_High',      min:5,  maxNative:9,  label:'IFR High'}
 };
 var chartLayer=null, chartOp=1;
+// Personal Wings VFR wall-planning chart — self-hosted low-zoom tiles (z3-7), stored in
+// public/wx/vfrplan/. Reprojected to web-mercator from the source GeoTIFF. It fills the gap
+// BELOW z8, where the FAA VFR_Sectional cache begins, so selecting "VFR Sectional" gives a
+// continuous chart: national planning overview (z3-7) → FAA sectional detail (z8-12).
+// maxZoom:7 means Leaflet stops requesting it at z8, handing off to the sectional cleanly.
+var PLAN_BOUNDS = L.latLngBounds([21.55,-129.92],[51.75,-64.14]);
+var planLayer = L.tileLayer('vfrplan/{z}/{x}/{y}.png',{
+  minZoom:3, maxZoom:7, minNativeZoom:3, maxNativeZoom:7, bounds:PLAN_BOUNDS,
+  zIndex:300, opacity:chartOp, errorTileUrl:TRANSPARENT,
+  attribution:'VFR planning chart &copy; Personal Wings'});
 function selectChart(key){
   if(chartLayer){ map.removeLayer(chartLayer); chartLayer=null; }
+  if(map.hasLayer(planLayer)) map.removeLayer(planLayer);
   var c=CHARTS[key]; if(!c) return;
   chartLayer=L.tileLayer(CHART_BASE+c.svc+'/MapServer/tile/{z}/{y}/{x}',{
     maxZoom:12, maxNativeZoom:c.maxNative, zIndex:300, opacity:chartOp,
     errorTileUrl:TRANSPARENT, attribution:'Aeronautical charts © FAA'}).addTo(map);
+  if(c.plan){ planLayer.setOpacity(chartOp); planLayer.addTo(map); }
 }
 
 // ---------- METAR markers ----------
@@ -478,13 +490,16 @@ document.getElementById('c-echo').addEventListener('change',function(e){ documen
 bindLayer('c-light','o-light',lightLayer);
 document.getElementById('c-light').addEventListener('change',function(e){ document.getElementById('lg-light').style.display=e.target.checked?'':'none'; });
 document.getElementById('chartsel').addEventListener('change',function(e){ selectChart(e.target.value); updZoom(); });
-document.getElementById('o-chart').addEventListener('input',function(e){ chartOp=e.target.value/100; if(chartLayer) chartLayer.setOpacity(chartOp); });
+document.getElementById('o-chart').addEventListener('input',function(e){ chartOp=e.target.value/100; if(chartLayer) chartLayer.setOpacity(chartOp); if(map.hasLayer(planLayer)) planLayer.setOpacity(chartOp); });
 // zoom indicator (also flags whether the selected chart has tiles at this zoom — the usual reason it looks blank)
 function updZoom(){
   var el=document.getElementById('zoomind'); if(!el) return;
   var z=map.getZoom(), key=document.getElementById('chartsel').value, c=CHARTS[key], hint='';
   if(c){
-    if(z<c.min) hint=' <span class="zbad">'+c.label+': zoom in to z'+c.min+'</span>';
+    if(z<c.min){
+      if(c.plan && z>=3) hint=' <span class="zhint">VFR planning overview ✓</span>';
+      else hint=' <span class="zbad">'+c.label+': zoom in to z'+c.min+'</span>';
+    }
     else if(z>c.maxNative) hint=' <span class="zhint">'+c.label+': z'+c.maxNative+' upscaled</span>';
     else hint=' <span class="zhint">'+c.label+' ✓</span>';
   }
