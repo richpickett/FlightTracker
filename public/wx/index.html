@@ -22,7 +22,7 @@
   /* Header */
   #hdr{position:fixed;top:10px;left:10px;z-index:1000;background:var(--panel);backdrop-filter:blur(6px);
        border:1px solid var(--line);border-radius:10px;padding:8px 12px;max-width:min(92vw,560px)}
-  #hdr h1{margin:0;font-size:13px;color:#1a2230;letter-spacing:.2px}
+  #hdr h1{margin:0;font-size:13px;color:#1a2230;letter-spacing:.2px;white-space:normal;overflow-wrap:anywhere}
   #hdr .meta{font-size:11px;color:var(--dim);margin-top:3px}
   #hdr .clock{color:var(--accent);font-weight:600}
   #hdr .brand{display:flex;align-items:center;gap:9px}
@@ -31,6 +31,9 @@
   #hdr .meta a{color:#0b3d91;text-decoration:none;border-bottom:1px dotted #0b3d91}
   #hdr .hubback{display:inline-block;font-size:11px;color:#0b3d91;text-decoration:none;margin-bottom:5px;border:1px solid #d8e0ea;border-radius:6px;padding:2px 8px;background:#eef2f7}
   #hdr .hubback:hover{background:#e2e8f0}
+  #hdr{max-width:min(92vw,440px)}
+  #hdr .brand>div{min-width:0}
+  body.shared #routein, body.shared #plotbtn, body.shared #newbtn, body.shared a.hubback[href="/"]{display:none!important}
   /* Controls panel */
   #ctl{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:1000;width:min(96vw,720px);
        background:var(--panel);backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
@@ -715,6 +718,7 @@ Promise.all([_pwJSON('airports.json'),_pwJSON('navaids.json'),_pwJSON('fixes.jso
   if(urlReg||savedReg) regExplicit=true;
   REG=((urlReg||savedReg||'').toUpperCase().replace(/[^A-Z0-9]/g,''));
   var rg=document.getElementById('regin'); if(rg) rg.value=REG;
+  if(new URLSearchParams(location.search).get('ac')){ document.body.classList.add('shared'); startADSB(); }
   setRouteMsg(Object.keys(AIRPORTS).length.toLocaleString()+' airports · '+Object.keys(DB.fixes).length.toLocaleString()+' fixes · '+Object.keys(DB.airways).length.toLocaleString()+' airways');
   if(initRoute) plotRoute(initRoute);
   resetAdsb(); if(map.hasLayer(adsbGroup)) fetchADSB();
