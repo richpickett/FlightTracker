@@ -507,16 +507,20 @@ function applyFrame(i){
   var utc=pad(d.getUTCHours())+pad(d.getUTCMinutes())+'Z';
   var tag = i===LIVE_IDX ? ' <span style="color:#22c55e">LIVE</span>' : ' (-'+((LIVE_IDX-i)*STEP_MIN)+'m)';
   document.getElementById('tlabel').innerHTML='<b>'+utc+'</b> · '+loc+tag;
+  if(cur!==LIVE_IDX) ensureFR24();
   updateGhost(d);
 }
 // ghost aircraft: where the tracked tail was at the animated frame time (from the recorded live trail)
 var ghostMarker=null;
-function loadHistTrack(){
-  if(!REG){ histTrack=[]; return; }
-  var my=++histSeq;
+function ensureFR24(force){
+  if(!REG) return;
+  var now=Date.now();
+  if(!force && fr24Reg===REG && (now-fr24At)<45000) return;   // free-first: airplanes.live is primary; throttle FR24 to <=1 call / 45s per tail
+  fr24At=now; fr24Reg=REG; var my=++histSeq;
   fetch('/.netlify/functions/track?reg='+encodeURIComponent(REG)).then(function(r){return r.json();}).then(function(j){
-    if(my!==histSeq) return;                       // a newer tail superseded this request
+    if(my!==histSeq) return;
     histTrack=(j&&j.tracks&&j.tracks.length>1) ? j.tracks.map(function(p){return [p.lat,p.lon,p.t];}).sort(function(a,b){return a[2]-b[2];}) : [];
+    histLive=(j&&j.live)?j.live:null; histLiveTs=(histLive&&histLive.ts)?histLive.ts:0;
   }).catch(function(){});
 }
 function trailPosAt(tMs){
@@ -679,7 +683,7 @@ document.getElementById('follow').addEventListener('change',function(e){ followO
 
 // ---------- live ADS-B position (airplanes.live, by registration) ----------
 var REG='', regExplicit=false;   // tail # to track; regExplicit = set via shared link or manual entry (beats profile default)
-var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsbTimer=null, adsbFollow=false, histTrack=[], histTimer=null, histSeq=0;
+var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsbTimer=null, adsbFollow=false, histTrack=[], histLive=null, histLiveTs=0, fr24At=0, fr24Reg='', histSeq=0;
 function resetAdsb(){ if(adsbMarker){adsbGroup.removeLayer(adsbMarker);adsbMarker=null;} if(adsbTrail){adsbGroup.removeLayer(adsbTrail);adsbTrail=null;} trailPts=[]; }
 function planeIcon(track,color){
   var rot=(track==null||isNaN(track))?0:track;
@@ -709,6 +713,7 @@ function fetchADSB(){
   ]).then(function(res){
     function pick(j){ var a=(j&&j.ac)||[]; for(var i=0;i<a.length;i++){ if(a[i].lat!=null) return a[i]; } return null; }
     var ac=pick(res[0])||pick(res[1]);
+    if(!ac){ ensureFR24(); if(histLive){ ac=Object.assign({}, histLive); ac.seen_pos=histLiveTs?((Date.now()-histLiveTs)/1000):null; } }
     if(!ac){ if(st) st.textContent=REG+': no ADS-B contact (on ground / out of coverage)'; return; }
     var flight=(ac.flight||'').trim(), reg=(ac.r||'').trim();
     var name=flight||reg||REG, sub=(reg&&reg!==name)?reg:'';
@@ -731,15 +736,15 @@ function fetchADSB(){
     if(adsbFollow){ map.panTo(ll,{animate:false}); }
   }).catch(function(){ if(st) st.textContent=REG+': ADS-B feed unavailable'; });
 }
-function startADSB(){ if(!map.hasLayer(adsbGroup)) adsbGroup.addTo(map); fetchADSB(); clearInterval(adsbTimer); adsbTimer=setInterval(fetchADSB,10000); loadHistTrack(); clearInterval(histTimer); histTimer=setInterval(loadHistTrack,60000); }
-function stopADSB(){ clearInterval(adsbTimer); adsbTimer=null; clearInterval(histTimer); histTimer=null; if(map.hasLayer(adsbGroup)) map.removeLayer(adsbGroup); }
+function startADSB(){ if(!map.hasLayer(adsbGroup)) adsbGroup.addTo(map); fetchADSB(); clearInterval(adsbTimer); adsbTimer=setInterval(fetchADSB,10000); }
+function stopADSB(){ clearInterval(adsbTimer); adsbTimer=null; if(map.hasLayer(adsbGroup)) map.removeLayer(adsbGroup); }
 document.getElementById('c-adsb').addEventListener('change',function(e){ if(e.target.checked) startADSB(); else stopADSB(); });
 document.getElementById('follow-adsb').addEventListener('change',function(e){ adsbFollow=e.target.checked; if(adsbFollow&&adsbMarker) map.panTo(adsbMarker.getLatLng()); });
 // change the tracked tail number
 function setReg(v,explicit){
   v=(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   REG=v; if(explicit) regExplicit=true;
-  histTrack=[]; if(typeof loadHistTrack==='function') loadHistTrack();
+  histTrack=[]; histLive=null; fr24Reg='';
   var ri=document.getElementById('regin'); if(ri && ri.value.toUpperCase()!==v) ri.value=v;
   try{ if(v) localStorage.setItem('pw_reg',v); }catch(e){}
   var lbl=v||'—';
