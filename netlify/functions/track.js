@@ -21,7 +21,7 @@ exports.handler = async (event) => {
     const lj = await lr.json();
     const data = (lj && (lj.data || lj)) || [];
     const ac = Array.isArray(data) ? data[0] : null;
-    if (!ac) return J(200, { reg, live: null, tracks: [], note: "no active flight" });
+    if (!ac) return J(200, { reg, live: null, tracks: [], note: "no active flight", debug: { url: `live/flight-positions/full?${filter}`, status: lr.status, keys: Object.keys(lj||{}), body: JSON.stringify(lj).slice(0, 700) } });
     const live = {
       lat: ac.lat, lon: ac.lon, track: ac.track,
       alt_baro: ac.alt, gs: ac.gspeed, baro_rate: ac.vspeed,
