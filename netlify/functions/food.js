@@ -2,7 +2,7 @@
 // GET /.netlify/functions/food?lat=..&lon=..&radius=3218  ->  {places:[{name,lat,lon,rating,count,type,mapsUri}]}
 const PLACES = "https://places.googleapis.com/v1/places:searchNearby";
 exports.handler = async (event) => {
-  const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,OPTIONS", "Cache-Control": "public, max-age=86400" };
+  const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,OPTIONS", "Cache-Control": "public, max-age=3600" };
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS };
   const J = (c, o) => ({ statusCode: c, headers: { ...CORS, "Content-Type": "application/json" }, body: JSON.stringify(o) });
   const q = event.queryStringParameters || {};
