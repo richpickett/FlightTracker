@@ -76,18 +76,21 @@ function depEpoch(){
   return ep;
 }
 function getRoute(){var u=new URLSearchParams(location.search).get('route');if(u)return u;try{var s=localStorage.getItem('pw_route');if(s)return s;}catch(e){}return 'KSAN BRDR7 JLI KPSP';}
-function saveAC(){try{var o={};['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv'].forEach(function(k){o[k]=document.getElementById(k).value;});localStorage.setItem('pw_ac',JSON.stringify(o));localStorage.setItem('pw_reg',(document.getElementById('reg')||{}).value||'');}catch(e){}}
+function saveAC(){if(window.PW_SHARED)return;try{var o={};['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv'].forEach(function(k){o[k]=document.getElementById(k).value;});localStorage.setItem('pw_ac',JSON.stringify(o));localStorage.setItem('pw_reg',(document.getElementById('reg')||{}).value||'');}catch(e){}}
 function loadAC(){try{var a=JSON.parse(localStorage.getItem('pw_ac')||'{}');['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv'].forEach(function(k){if(a[k]!=null&&a[k]!=='')document.getElementById(k).value=a[k];});var rr=localStorage.getItem('pw_reg');if(rr){var re=document.getElementById('reg');if(re)re.value=rr.toUpperCase();}}catch(e){}}
-function setRoute(str){var rg=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');try{localStorage.setItem('pw_route',str);if(rg)localStorage.setItem('pw_reg',rg);}catch(e){}history.replaceState(null,'',location.pathname+'?route='+encodeURIComponent(str)+(rg?'&reg='+encodeURIComponent(rg):''));}
+function setRoute(str){if(window.PW_SHARED)return;var rg=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');try{localStorage.setItem('pw_route',str);if(rg)localStorage.setItem('pw_reg',rg);}catch(e){}history.replaceState(null,'',location.pathname+'?route='+encodeURIComponent(str)+(rg?'&reg='+encodeURIComponent(rg):''));}
+function lockShared(){['rin','reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','go'].forEach(function(id){var e=document.getElementById(id); if(e) e.disabled=true;}); if(!document.getElementById('pw-shared-banner')){var out=document.getElementById('out'); var b=document.createElement('div'); b.id='pw-shared-banner'; b.style.cssText='background:#eef4ff;border:1px solid #cfe0f5;padding:7px 11px;border-radius:6px;margin:6px 0;color:#33506e;font-size:13px'; b.innerHTML='\uD83D\uDD12 <b>Shared flight (view only).</b> Aircraft, timing and route come from the sender and cannot be edited here.'; if(out&&out.parentNode) out.parentNode.insertBefore(b,out);}}
 
 function _pwJSON(u,o){ return fetch(u,o||{}).then(function(r){return r.json();}).catch(function(){return {};}); }
 Promise.all([
   _pwJSON('/wx/airports.json'),
   _pwJSON('/wx/wx-config.json',{cache:'no-store'}),
   _pwJSON('/wx/navaids.json'), _pwJSON('/wx/fixes.json'), _pwJSON('/wx/airways.json'), _pwJSON('/wx/procedures.json')
-]).then(function(res){AIRPORTS=res[0]||{};CFG=res[1]||{};DB.airports=AIRPORTS;DB.navaids=res[2]||{};DB.fixes=res[3]||{};DB.airways=res[4]||{};DB.procedures=res[5]||{};loadAC(); try{var _ur=new URLSearchParams(location.search).get('reg'); if(_ur){var _re=document.getElementById('reg'); if(_re) _re.value=_ur.toUpperCase().replace(/[^A-Z0-9]/g,'');}}catch(e){}
+]).then(function(res){AIRPORTS=res[0]||{};CFG=res[1]||{};DB.airports=AIRPORTS;DB.navaids=res[2]||{};DB.fixes=res[3]||{};DB.airways=res[4]||{};DB.procedures=res[5]||{}; var _SP=new URLSearchParams(location.search), _acRaw=_SP.get('ac'); window.PW_SHARED=!!_acRaw;
+  if(window.PW_SHARED){ try{var _ac=JSON.parse(_acRaw);['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv'].forEach(function(k){var e=document.getElementById(k); if(e&&_ac[k]!=null&&_ac[k]!=='') e.value=_ac[k];});}catch(e){} } else { loadAC(); }
+  try{var _ur=_SP.get('reg'); if(_ur){var _re=document.getElementById('reg'); if(_re) _re.value=_ur.toUpperCase().replace(/[^A-Z0-9]/g,'');}}catch(e){}
   var dd=document.getElementById('depdate'); if(dd&&!dd.value){var n=new Date();dd.value=n.getFullYear()+'-'+('0'+(n.getMonth()+1)).slice(-2)+'-'+('0'+n.getDate()).slice(-2);}
-  var r=getRoute();document.getElementById('rin').value=r;render(r);});
+  var r=getRoute();document.getElementById('rin').value=r;render(r); if(window.PW_SHARED) lockShared();});
 
 function buildMap(pts, allpts){
   if(BMAP){ try{BMAP.remove();}catch(e){} BMAP=null; }
