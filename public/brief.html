@@ -21,6 +21,7 @@
   .leg h3{margin:0 0 3px;font-size:14.5px;color:var(--blue)} .leg p{margin:2px 0} .fuel{color:#0b6b3a;font-weight:600} .fuel.bad{color:var(--red)} .hw{color:#a15c00} .tw{color:#0b6b3a}
   .wxrow{padding:6px 0;border-bottom:1px solid #eef1f5} .badge{display:inline-block;padding:1px 7px;border-radius:5px;color:#fff;font-weight:700;font-size:12px}
   .raw{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#243247;display:block;margin-top:2px;white-space:pre-wrap} .taf{color:#0b4a8a}
+  .onfield{display:inline-block;background:#0b6b3a;color:#fff;font-weight:700;font-size:10px;letter-spacing:.04em;padding:1px 6px;border-radius:4px;margin:0 3px;vertical-align:1px;font-family:system-ui,-apple-system,sans-serif}
   ul{margin:5px 0;padding-left:18px} li{margin:2px 0} a.inline{color:var(--blue)}
   .flag{background:#fff8e6;border:1px solid #e8cf7a;border-radius:6px;padding:7px 10px;margin:6px 0;font-size:13px}
   .foot{color:var(--dim);font-size:11px;margin-top:16px;border-top:1px solid var(--line);padding-top:8px}
@@ -172,16 +173,22 @@ function loadFood(pts){
   box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~2 sm (Google Places) — verify hours by phone.</div>';
   var rows={};
   fields.forEach(function(p){ var blk=document.createElement('div'); blk.className='wxrow'; blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>'; box.appendChild(blk); rows[p.id]=blk; });
+  // On-field = essentially at the airport reference point (<=0.4 sm) OR the place name says airport/airfield.
+  // We intentionally DON'T match the airport-name token against addresses: for city-named fields
+  // (e.g. Camarillo) the city appears in every local address and would tag the whole town.
+  function isOnField(p,e,d){ return d<=0.4 || /\bair(port|field)\b/i.test(e.name||''); }
   function renderField(p,places){
     var blk=rows[p.id]; if(!blk) return;
-    var near=(places||[]).map(function(e){return {e:e,d:smDist(p.la,p.lo,e.lat,e.lon)};}).filter(function(x){return x.d<=2.05;});
-    near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,8);
+    var near=(places||[]).map(function(e){var d=smDist(p.la,p.lo,e.lat,e.lon);return {e:e,d:d,of:isOnField(p,e,d)};}).filter(function(x){return x.d<=2.05;});
+    near.sort(function(a,b){ if(a.of!==b.of) return a.of?-1:1; return a.d-b.d; }); var top=near.slice(0,8);
     if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no food found — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; return; }
     blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.e;
-      var rt=(e.rating!=null)?(' ★'+(+e.rating).toFixed(1)+(e.count?' ('+e.count+')':'')):'';
-      var ty=e.type?(' · '+nesc(e.type)):'';
+      var rt=(e.rating!=null)?('★'+(+e.rating).toFixed(1)+(e.count?' ('+e.count+')':'')):'';
+      var ty=e.type?nesc(e.type):'';
       var nm=e.mapsUri?('<a class="inline" href="'+e.mapsUri+'" target="_blank">'+nesc(e.name)+'</a>'):nesc(e.name);
-      return '<span class="raw">'+nm+' <span style="color:#889">('+x.d.toFixed(1)+' sm'+ty+rt+')</span></span>';
+      var parts=[]; if(!x.of) parts.push(x.d.toFixed(1)+' sm'); if(ty) parts.push(ty);
+      var meta=parts.join(' · ')+(rt?((parts.length?' ':'')+rt):'');
+      return '<span class="raw">'+nm+(x.of?'<span class="onfield">ON FIELD</span>':'')+(meta?' <span style="color:#889">('+meta+')</span>':'')+'</span>';
     }).join('');
   }
   var qi=0, active=0, LIMIT=3;
