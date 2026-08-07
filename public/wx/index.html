@@ -245,7 +245,7 @@ var LIVE_IDX = NFRAMES-1;       // index of the "now" frame; frames after it are
 var CAT_COLOR = {VFR:'#22c55e',MVFR:'#3b82f6',IFR:'#ef4444',LIFR:'#d000d0',NA:'#94a3b8'};
 
 // ---------- map ----------
-var map = L.map('map',{zoomControl:true,attributionControl:true}).setView([42.2,-97.5],5);
+var map = L.map('map',{zoomControl:true,attributionControl:true,maxZoom:17}).setView([42.2,-97.5],5);
 var BASES = {
   dark: [ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; OSM &copy; CARTO'}),
           L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,pane:'shadowPane',opacity:.9}) ],
@@ -350,7 +350,7 @@ var CHARTS={
   ifrlow:  {svc:'IFR_AreaLow',   min:7,  maxNative:12, label:'IFR Low'},
   ifrhigh: {svc:'IFR_High',      min:5,  maxNative:9,  label:'IFR High'}
 };
-var chartLayer=null, chartOp=1;
+var chartLayer=null, tacLayer=null, chartOp=1;
 // Personal Wings VFR wall-planning chart — self-hosted tiles (z3-9 native), stored in
 // public/wx/vfrplan/. Reprojected to web-mercator from the source GeoTIFF (~262 m/px, so z9
 // is its true native resolution; z10 is Leaflet-upscaled 2x from z9). It covers the range
@@ -362,14 +362,28 @@ var planLayer = L.tileLayer('vfrplan/{z}/{x}/{y}.png',{
   minZoom:3, maxZoom:10, minNativeZoom:3, maxNativeZoom:9, bounds:PLAN_BOUNDS,
   zIndex:300, opacity:chartOp, errorTileUrl:TRANSPARENT,
   attribution:'VFR planning chart &copy; Personal Wings'});
+function mkChart(c,zi){
+  return L.tileLayer(CHART_BASE+c.svc+'/MapServer/tile/{z}/{y}/{x}',{
+    minZoom:c.min, maxZoom:17, maxNativeZoom:c.maxNative, zIndex:zi, opacity:chartOp,
+    errorTileUrl:TRANSPARENT, attribution:'Aeronautical charts © FAA'});
+}
 function selectChart(key){
   if(chartLayer){ map.removeLayer(chartLayer); chartLayer=null; }
+  if(tacLayer){ map.removeLayer(tacLayer); tacLayer=null; }
   if(map.hasLayer(planLayer)) map.removeLayer(planLayer);
   var c=CHARTS[key]; if(!c) return;
-  chartLayer=L.tileLayer(CHART_BASE+c.svc+'/MapServer/tile/{z}/{y}/{x}',{
-    minZoom:c.min, maxZoom:12, maxNativeZoom:c.maxNative, zIndex:300, opacity:chartOp,
-    errorTileUrl:TRANSPARENT, attribution:'Aeronautical charts © FAA'}).addTo(map);
-  if(c.plan){ planLayer.setOpacity(chartOp); planLayer.addTo(map); }
+  if(key==='tac'){
+    // TAC coverage is only metro islands, so ride it ON TOP of the full sectional
+    // stack: sectional (+planning below z11) never disappears; the terminal chart
+    // paints over it from z12+ wherever a TAC exists, and 404s->transparent elsewhere.
+    var sec=CHARTS.vfr;
+    chartLayer=mkChart(sec,300).addTo(map);
+    planLayer.setOpacity(chartOp); planLayer.addTo(map); // vfr carries the planning chart
+    tacLayer=mkChart(c,310).addTo(map);
+  } else {
+    chartLayer=mkChart(c,300).addTo(map);
+    if(c.plan){ planLayer.setOpacity(chartOp); planLayer.addTo(map); }
+  }
 }
 
 // ---------- METAR markers ----------
@@ -491,13 +505,18 @@ document.getElementById('c-echo').addEventListener('change',function(e){ documen
 bindLayer('c-light','o-light',lightLayer);
 document.getElementById('c-light').addEventListener('change',function(e){ document.getElementById('lg-light').style.display=e.target.checked?'':'none'; });
 document.getElementById('chartsel').addEventListener('change',function(e){ selectChart(e.target.value); updZoom(); });
-document.getElementById('o-chart').addEventListener('input',function(e){ chartOp=e.target.value/100; if(chartLayer) chartLayer.setOpacity(chartOp); if(map.hasLayer(planLayer)) planLayer.setOpacity(chartOp); });
+document.getElementById('o-chart').addEventListener('input',function(e){ chartOp=e.target.value/100; if(chartLayer) chartLayer.setOpacity(chartOp); if(tacLayer) tacLayer.setOpacity(chartOp); if(map.hasLayer(planLayer)) planLayer.setOpacity(chartOp); });
 // zoom indicator (also flags whether the selected chart has tiles at this zoom — the usual reason it looks blank)
 function updZoom(){
   var el=document.getElementById('zoomind'); if(!el) return;
   var z=map.getZoom(), key=document.getElementById('chartsel').value, c=CHARTS[key], hint='';
   if(c){
-    if(z<c.min){
+    if(key==='tac'){
+      if(z<12) hint=' <span class="zhint">VFR Sectional ✓ · TAC overlays at z12+</span>';
+      else if(z>c.maxNative) hint=' <span class="zhint">VFR Terminal (metro) ✓ · z'+c.maxNative+' upscaled</span>';
+      else hint=' <span class="zhint">VFR Terminal (metro) ✓</span>';
+    }
+    else if(z<c.min){
       if(c.plan && z>=3) hint=' <span class="zhint">VFR planning overview ✓</span>';
       else hint=' <span class="zbad">'+c.label+': zoom in to z'+c.min+'</span>';
     }
