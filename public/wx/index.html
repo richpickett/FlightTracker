@@ -318,16 +318,22 @@ var RADAR_OPTS={ layers:'conus_base_reflectivity_mosaic', format:'image/png', tr
 // (A single WMS layer clears its tiles on every setParams → the flash you were seeing.)
 var radarA = L.tileLayer.wms(RADAR_WMS, Object.assign({opacity:.8}, RADAR_OPTS));
 var radarB = L.tileLayer.wms(RADAR_WMS, Object.assign({opacity:0 }, RADAR_OPTS));
-var radarFront=radarA, radarBack=radarB, radarOp=.8, radarGen=0, radarOn=true;
+var radarFront=radarA, radarBack=radarB, radarOp=.8, radarGen=0, radarOn=true, radarReady=true;
 function radarShow(on){
   radarOn=on;
   if(on){ radarA.addTo(map); radarB.addTo(map); setRadarFrame(frames[cur]); }
   else { map.removeLayer(radarA); map.removeLayer(radarB); }
 }
 function setRadarFrame(d){
-  var gen=++radarGen, back=radarBack;
+  var gen=++radarGen, back=radarBack, errs=0;
+  function onErr(){ errs++; }
+  radarReady=false;
+  back.on('tileerror', onErr);
   back.once('load',function(){
+    back.off('tileerror', onErr);
+    radarReady=true;
     if(gen!==radarGen) return;                 // a newer frame superseded this one
+    if(errs>0) return;                          // this scan failed to load (data gap) — keep the last good frame instead of blanking
     back.setOpacity(radarOp); radarFront.setOpacity(0);
     var t=radarFront; radarFront=radarBack; radarBack=t;
   });
@@ -481,11 +487,27 @@ function applyFrame(i){
   var utc=pad(d.getUTCHours())+pad(d.getUTCMinutes())+'Z';
   var tag = i===LIVE_IDX ? ' <span style="color:#22c55e">LIVE</span>' : ' (-'+((LIVE_IDX-i)*STEP_MIN)+'m)';
   document.getElementById('tlabel').innerHTML='<b>'+utc+'</b> · '+loc+tag;
+  updateGhost(d);
+}
+// ghost aircraft: where the tracked tail was at the animated frame time (from the recorded live trail)
+var ghostMarker=null;
+function trailPosAt(tMs){
+  var n=trailPts.length; if(n<2) return null;
+  if(tMs<=trailPts[0][2] || tMs>=trailPts[n-1][2]) return null;   // outside the recorded window
+  for(var i=1;i<n;i++){ if(trailPts[i][2]>=tMs){ var a=trailPts[i-1],b=trailPts[i],f=(tMs-a[2])/((b[2]-a[2])||1); return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f]; } }
+  return null;
+}
+function updateGhost(d){
+  var pos=(cur===LIVE_IDX)?null:trailPosAt(d.getTime());
+  if(!pos || !map.hasLayer(adsbGroup)){ if(ghostMarker){ adsbGroup.removeLayer(ghostMarker); ghostMarker=null; } return; }
+  if(!ghostMarker){ ghostMarker=L.marker(pos,{icon:planeIcon(null,'#9db8d8'),opacity:.75,zIndexOffset:1050}).addTo(adsbGroup).bindTooltip((REG||'aircraft')+' @ frame time'); }
+  else ghostMarker.setLatLng(pos);
 }
 
 // ---------- animation ----------
 var playing=false, timer=null;
 function tick(){
+  if(radarOn && !radarReady) return;            // wait for the current scan to finish — avoids half-loaded/blotchy frames
   var n=cur+1; if(n>=frames.length){ n=0; }
   applyFrame(n);
   if(n===frames.length-1){ // pause on the last (newest) frame
@@ -668,7 +690,7 @@ function fetchADSB(){
     if(!adsbMarker){ adsbMarker=L.marker(ll,{icon:planeIcon(hdg,'#ffb14a'),zIndexOffset:1100}).addTo(adsbGroup).bindPopup(name)
       .bindTooltip('',{permanent:true,direction:'right',offset:[13,0],className:'ac-label'}); }
     else { adsbMarker.setLatLng(ll).setIcon(planeIcon(hdg,'#ffb14a')); }
-    if(!last || last[0]!==ll[0] || last[1]!==ll[1]){ trailPts.push(ll); if(trailPts.length>500) trailPts.shift(); }
+    if(!last || last[0]!==ll[0] || last[1]!==ll[1]){ trailPts.push([ll[0],ll[1],Date.now()-(ac.seen_pos!=null?ac.seen_pos*1000:0)]); if(trailPts.length>500) trailPts.shift(); }
     if(!adsbTrail){ adsbTrail=L.polyline(trailPts,{color:'#ffb14a',weight:2,opacity:.65}).addTo(adsbGroup); } else { adsbTrail.setLatLngs(trailPts); }
     var alt=ac.alt_baro==null?'—':(ac.alt_baro==='ground'?'GND':Math.round(ac.alt_baro).toLocaleString()+'′');
     var vs=ac.baro_rate==null?'':(' · '+(ac.baro_rate>=0?'+':'')+Math.round(ac.baro_rate)+' fpm');
