@@ -153,7 +153,7 @@
     <div class="bar" style="background:linear-gradient(90deg,#d8c8ff 0%,#b36bff 14%,#6a3cff 28%,#0064ff 43%,#00c7ff 57%,#00e000 71%,#ffe000 85%,#ff3000 100%)"></div>
     <div class="ticks"><span>low</span><span>high</span></div>
   </div>
-  <div class="note">Radar: NOAA/MRMS base-reflectivity mosaic (nowCOAST). Echo tops: NCEP MRMS. Satellite: NASA GIBS (GOES-East). METAR: NWS.</div>
+  <div class="note">Radar: NOAA/MRMS base-reflectivity mosaic (nowCOAST). Echo tops: NCEP MRMS. Satellite: NOAA nowCOAST (GOES longwave IR). METAR: NWS.</div>
 </div>
 
 <div id="ctl">
@@ -343,9 +343,10 @@ function setRadarFrame(d){
 // GOES-East Band 13 Clean IR via NASA GIBS (reliable, CORS). ~35-min lag, times on 10-min marks.
 function satTime(d){ var t=new Date(d.getTime()-35*60000); t.setUTCMinutes(Math.floor(t.getUTCMinutes()/10)*10,0,0); return t.toISOString().split('.')[0]+'Z'; }
 function satUrl(d){ return 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_Band13_Clean_Infrared/default/'+satTime(d)+'/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png'; }
-var SAT_OPTS={maxZoom:12,maxNativeZoom:6,zIndex:390,crossOrigin:true,errorTileUrl:TRANSPARENT};
-var satA=L.tileLayer(satUrl(frames[frames.length-1]),Object.assign({opacity:.72},SAT_OPTS));
-var satB=L.tileLayer(satUrl(frames[frames.length-1]),Object.assign({opacity:0},SAT_OPTS));
+var SAT_WMS='https://nowcoast.noaa.gov/geoserver/satellite/wms';
+var SAT_OPTS={ layers:'goes_longwave_imagery', format:'image/png', transparent:true, version:'1.3.0', zIndex:390, crossOrigin:true, errorTileUrl:TRANSPARENT };
+var satA=L.tileLayer.wms(SAT_WMS,Object.assign({opacity:.72},SAT_OPTS));
+var satB=L.tileLayer.wms(SAT_WMS,Object.assign({opacity:0},SAT_OPTS));
 var satFront=satA, satBack=satB, satOp=.72, satGen=0, satOn=false, satReady=true;
 function satShow(on){ satOn=on; if(on){ satA.addTo(map); satB.addTo(map); setSatFrame(frames[cur]); } else { map.removeLayer(satA); map.removeLayer(satB); } }
 function setSatFrame(d){
@@ -361,7 +362,7 @@ function setSatFrame(d){
     back.setOpacity(satOp); satFront.setOpacity(0);
     var t=satFront; satFront=satBack; satBack=t;
   });
-  back.setUrl(satUrl(d));
+  back.setParams({time:isoUTC(d)});
 }
 var echoLayer  = L.tileLayer.wms('https://opengeo.ncep.noaa.gov/geoserver/conus/conus_neet_v18/ows?',{
   layers:'conus_neet_v18',format:'image/png',transparent:true,version:'1.3.0',opacity:.75,zIndex:410,crossOrigin:true});
