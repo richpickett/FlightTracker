@@ -511,10 +511,19 @@ function applyFrame(i){
 }
 // ghost aircraft: where the tracked tail was at the animated frame time (from the recorded live trail)
 var ghostMarker=null;
+function loadHistTrack(){
+  if(!REG){ histTrack=[]; return; }
+  var my=++histSeq;
+  fetch('/.netlify/functions/track?reg='+encodeURIComponent(REG)).then(function(r){return r.json();}).then(function(j){
+    if(my!==histSeq) return;                       // a newer tail superseded this request
+    histTrack=(j&&j.tracks&&j.tracks.length>1) ? j.tracks.map(function(p){return [p.lat,p.lon,p.t];}).sort(function(a,b){return a[2]-b[2];}) : [];
+  }).catch(function(){});
+}
 function trailPosAt(tMs){
-  var n=trailPts.length; if(n<2) return null;
-  if(tMs<=trailPts[0][2] || tMs>=trailPts[n-1][2]) return null;   // outside the recorded window
-  for(var i=1;i<n;i++){ if(trailPts[i][2]>=tMs){ var a=trailPts[i-1],b=trailPts[i],f=(tMs-a[2])/((b[2]-a[2])||1); return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f]; } }
+  var src=(histTrack&&histTrack.length>=2)?histTrack:trailPts;   // FR24 recorded track if available, else the live trail
+  var n=src.length; if(n<2) return null;
+  if(tMs<=src[0][2] || tMs>=src[n-1][2]) return null;            // outside recorded window
+  for(var i=1;i<n;i++){ if(src[i][2]>=tMs){ var a=src[i-1],b=src[i],f=(tMs-a[2])/((b[2]-a[2])||1); return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f]; } }
   return null;
 }
 function updateGhost(d){
@@ -670,7 +679,7 @@ document.getElementById('follow').addEventListener('change',function(e){ followO
 
 // ---------- live ADS-B position (airplanes.live, by registration) ----------
 var REG='', regExplicit=false;   // tail # to track; regExplicit = set via shared link or manual entry (beats profile default)
-var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsbTimer=null, adsbFollow=false;
+var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsbTimer=null, adsbFollow=false, histTrack=[], histTimer=null, histSeq=0;
 function resetAdsb(){ if(adsbMarker){adsbGroup.removeLayer(adsbMarker);adsbMarker=null;} if(adsbTrail){adsbGroup.removeLayer(adsbTrail);adsbTrail=null;} trailPts=[]; }
 function planeIcon(track,color){
   var rot=(track==null||isNaN(track))?0:track;
@@ -722,14 +731,15 @@ function fetchADSB(){
     if(adsbFollow){ map.panTo(ll,{animate:false}); }
   }).catch(function(){ if(st) st.textContent=REG+': ADS-B feed unavailable'; });
 }
-function startADSB(){ if(!map.hasLayer(adsbGroup)) adsbGroup.addTo(map); fetchADSB(); clearInterval(adsbTimer); adsbTimer=setInterval(fetchADSB,10000); }
-function stopADSB(){ clearInterval(adsbTimer); adsbTimer=null; if(map.hasLayer(adsbGroup)) map.removeLayer(adsbGroup); }
+function startADSB(){ if(!map.hasLayer(adsbGroup)) adsbGroup.addTo(map); fetchADSB(); clearInterval(adsbTimer); adsbTimer=setInterval(fetchADSB,10000); loadHistTrack(); clearInterval(histTimer); histTimer=setInterval(loadHistTrack,60000); }
+function stopADSB(){ clearInterval(adsbTimer); adsbTimer=null; clearInterval(histTimer); histTimer=null; if(map.hasLayer(adsbGroup)) map.removeLayer(adsbGroup); }
 document.getElementById('c-adsb').addEventListener('change',function(e){ if(e.target.checked) startADSB(); else stopADSB(); });
 document.getElementById('follow-adsb').addEventListener('change',function(e){ adsbFollow=e.target.checked; if(adsbFollow&&adsbMarker) map.panTo(adsbMarker.getLatLng()); });
 // change the tracked tail number
 function setReg(v,explicit){
   v=(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   REG=v; if(explicit) regExplicit=true;
+  histTrack=[]; if(typeof loadHistTrack==='function') loadHistTrack();
   var ri=document.getElementById('regin'); if(ri && ri.value.toUpperCase()!==v) ri.value=v;
   try{ if(v) localStorage.setItem('pw_reg',v); }catch(e){}
   var lbl=v||'—';
