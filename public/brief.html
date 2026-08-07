@@ -162,21 +162,21 @@ function overpass(q,i){ i=i||0; if(i>=OVERPASS.length) return Promise.reject(new
   return fetch(OVERPASS[i],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q),signal:ctrl.signal})
     .then(function(r){ clearTimeout(to); if(!r.ok) throw 0; return r.json(); })
     .catch(function(){ clearTimeout(to); return overpass(q,i+1); }); }
-function gmapsFood(p){ return 'https://www.google.com/maps/search/restaurants/@'+p.la+','+p.lo+',14z'; }
+function gmapsFood(p){ return 'https://www.google.com/maps/search/restaurants/@'+p.la+','+p.lo+',13z'; }
 function foodLabel(am){ return am==='cafe'?'café':(am==='fast_food'?'fast food':((am==='pub'||am==='bar'||am==='food_court')?am.replace('_',' '):'restaurant')); }
 var FOOD_CACHE={};
 function loadFood(pts){
   var box=document.getElementById('food'); if(!box) return;
   var all=pts.filter(function(p){return p.la!=null&&p.lo!=null;});
   var seen={}, fields=[]; all.forEach(function(p){ if(!seen[p.id]){seen[p.id]=1;fields.push(p);} });  // unique airports only
-  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~1 sm (OpenStreetMap, incl. on-field) — verify, or cross-check <a class="inline" href="https://www.100dollarhamburger.com/" target="_blank">$100 Hamburger ↗</a>.</div>';
+  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~1 sm (OpenStreetMap, incl. on-field) — verify by phone.</div>';
   var rows={};
   fields.forEach(function(p){ var blk=document.createElement('div'); blk.className='wxrow'; blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>'; box.appendChild(blk); rows[p.id]=blk; });
   function renderField(p,places){
     var blk=rows[p.id]; if(!blk) return;
     var near=(places||[]).map(function(e){return {e:e,d:smDist(p.la,p.lo,e.lat,e.lon)};}).filter(function(x){return x.d<=1.05;});
     near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,8);
-    if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 1 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; return; }
+    if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 1 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; return; }
     blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.e;
       var c=e.cuisine?(' · '+nesc(e.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
       return '<span class="raw">'+nesc(e.name)+' <span style="color:#889">('+foodLabel(e.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
@@ -187,13 +187,13 @@ function loadFood(pts){
   function pump(){
     while(active<LIMIT && qi<fields.length){
       (function(p){ active++;
-        var to=setTimeout(function(){ var blk=rows[p.id]; if(blk && blk.innerHTML.indexOf('…')>=0){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; } }, 9000);
+        var to=setTimeout(function(){ var blk=rows[p.id]; if(blk && blk.innerHTML.indexOf('…')>=0){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; } }, 9000);
         var done=function(){ clearTimeout(to); active--; pump(); };
         if(FOOD_CACHE[p.id]){ renderField(p,FOOD_CACHE[p.id]); return done(); }
         overpass(foodQuery(p.la,p.lo)).then(function(j){
           var places=(j.elements||[]).map(function(el){ var la=el.lat!=null?el.lat:(el.center&&el.center.lat), lo=el.lon!=null?el.lon:(el.center&&el.center.lon); var t=el.tags||{}; var nm=t.name||t.brand; return (nm&&la!=null)?{name:nm,amenity:t.amenity||'restaurant',cuisine:t.cuisine||'',lat:la,lon:lo}:null; }).filter(Boolean);
           FOOD_CACHE[p.id]=places; renderField(p,places);
-        }).catch(function(){ var blk=rows[p.id]; if(blk) blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; }).then(done,done);
+        }).catch(function(){ var blk=rows[p.id]; if(blk) blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; }).then(done,done);
       })(fields[qi++]);
     }
   }
