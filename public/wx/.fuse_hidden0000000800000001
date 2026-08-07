@@ -346,7 +346,7 @@ var lightLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/geoserver/lightning_
 var CHART_BASE='https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/';
 var CHARTS={
   vfr:     {svc:'VFR_Sectional', min:11, maxNative:12, label:'VFR Sectional', plan:true},
-  tac:     {svc:'VFR_Terminal',  min:12, maxNative:12, label:'VFR Terminal (TAC, metro only)'},
+  tac:     {svc:'VFR_Terminal',  min:10, maxNative:12, label:'VFR Terminal (TAC, metro only)'},
   ifrlow:  {svc:'IFR_AreaLow',   min:7,  maxNative:12, label:'IFR Low'},
   ifrhigh: {svc:'IFR_High',      min:5,  maxNative:9,  label:'IFR High'}
 };
