@@ -343,7 +343,26 @@ function setRadarFrame(d){
 // GOES-East Band 13 Clean IR via NASA GIBS (reliable, CORS). ~35-min lag, times on 10-min marks.
 function satTime(d){ var t=new Date(d.getTime()-35*60000); t.setUTCMinutes(Math.floor(t.getUTCMinutes()/10)*10,0,0); return t.toISOString().split('.')[0]+'Z'; }
 function satUrl(d){ return 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_Band13_Clean_Infrared/default/'+satTime(d)+'/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png'; }
-var satLayer   = L.tileLayer(satUrl(frames[frames.length-1]),{opacity:.72,maxZoom:12,maxNativeZoom:6,zIndex:390,crossOrigin:true,errorTileUrl:TRANSPARENT});
+var SAT_OPTS={maxZoom:12,maxNativeZoom:6,zIndex:390,crossOrigin:true,errorTileUrl:TRANSPARENT};
+var satA=L.tileLayer(satUrl(frames[frames.length-1]),Object.assign({opacity:.72},SAT_OPTS));
+var satB=L.tileLayer(satUrl(frames[frames.length-1]),Object.assign({opacity:0},SAT_OPTS));
+var satFront=satA, satBack=satB, satOp=.72, satGen=0, satOn=false, satReady=true;
+function satShow(on){ satOn=on; if(on){ satA.addTo(map); satB.addTo(map); setSatFrame(frames[cur]); } else { map.removeLayer(satA); map.removeLayer(satB); } }
+function setSatFrame(d){
+  var gen=++satGen, back=satBack, errs=0;
+  function onErr(){ errs++; }
+  satReady=false;
+  back.on('tileerror', onErr);
+  back.once('load',function(){
+    back.off('tileerror', onErr);
+    satReady=true;
+    if(gen!==satGen) return;
+    if(errs>0) return;                          // this IR scan failed to load — keep the last good frame
+    back.setOpacity(satOp); satFront.setOpacity(0);
+    var t=satFront; satFront=satBack; satBack=t;
+  });
+  back.setUrl(satUrl(d));
+}
 var echoLayer  = L.tileLayer.wms('https://opengeo.ncep.noaa.gov/geoserver/conus/conus_neet_v18/ows?',{
   layers:'conus_neet_v18',format:'image/png',transparent:true,version:'1.3.0',opacity:.75,zIndex:410,crossOrigin:true});
 // Lightning strike density — NOAA/LDN via nowCOAST GeoServer WMS (CORS, any zoom, time-enabled, ~15-min cadence)
@@ -479,7 +498,7 @@ var cur=NFRAMES-1;
 function applyFrame(i){
   cur=i; var d=frames[i];
   if(radarOn) setRadarFrame(d);
-  if(map.hasLayer(satLayer))   satLayer.setUrl(satUrl(d));
+  if(satOn) setSatFrame(d);
   if(map.hasLayer(echoLayer))  echoLayer.setParams({time:isoUTC(d)});
   if(map.hasLayer(lightLayer)) lightLayer.setParams({time:isoUTC(d)});
   document.getElementById('frame').value=i;
@@ -507,7 +526,7 @@ function updateGhost(d){
 // ---------- animation ----------
 var playing=false, timer=null;
 function tick(){
-  if(radarOn && !radarReady) return;            // wait for the current scan to finish — avoids half-loaded/blotchy frames
+  if((radarOn && !radarReady) || (satOn && !satReady)) return;   // wait for the current radar/IR scan to finish — no half-loaded/blotchy frames
   var n=cur+1; if(n>=frames.length){ n=0; }
   applyFrame(n);
   if(n===frames.length-1){ // pause on the last (newest) frame
@@ -553,7 +572,8 @@ function updZoom(){
   el.innerHTML='z'+z+hint;
 }
 map.on('zoom zoomend',updZoom); updZoom();
-bindLayer('c-sat','o-sat',satLayer);
+document.getElementById('c-sat').addEventListener('change',function(e){ satShow(e.target.checked); });
+document.getElementById('o-sat').addEventListener('input',function(e){ satOp=e.target.value/100; satFront.setOpacity(satOp); });
 document.getElementById('c-metar').addEventListener('change',function(e){ if(e.target.checked) metarGroup.addTo(map); else map.removeLayer(metarGroup); });
 document.getElementById('base').addEventListener('change',function(e){ setBase(e.target.value); });
 
