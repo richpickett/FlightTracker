@@ -1,0 +1,41 @@
+name: Refresh nav data (FAA CIFP)
+
+# Regenerates public/wx/{navaids,fixes,airways,procedures}.json from the current
+# FAA CIFP cycle and commits any changes. Netlify auto-deploys on the push.
+# Runs twice weekly (only commits when the data actually changes) + manual button.
+
+on:
+  schedule:
+    - cron: '0 10 * * 1,4'   # Mon & Thu 10:00 UTC — catches each 28-day cycle within days
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: navdata-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build nav data from current CIFP
+        run: python3 tools/build_navdata.py
+      - name: Commit & push if changed
+        run: |
+          FILES="public/wx/navaids.json public/wx/fixes.json public/wx/airways.json public/wx/procedures.json"
+          if [ -n "$(git status --porcelain $FILES)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add $FILES
+            git commit -m "Auto: refresh FAA CIFP nav data ($(date -u +%Y-%m-%d))"
+            git push
+            echo "Nav data updated and pushed."
+          else
+            echo "No nav-data changes this cycle."
+          fi
