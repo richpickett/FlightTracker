@@ -108,6 +108,7 @@
   .os-acc{animation:pulse 2s infinite}
   @media (max-width:560px){ #legend{display:none} .tlabel{min-width:120px} }
 </style>
+<script src="route-expand.js"></script>
 </head>
 <body>
 <div id="map"></div>
@@ -154,7 +155,7 @@
 
 <div id="ctl">
   <div class="row" style="border-bottom:1px solid var(--line);padding-bottom:8px">
-    <input id="routein" placeholder="Route:  KATW Y51 KBUB KOGA KBDU" autocomplete="off" spellcheck="false">
+    <input id="routein" placeholder="Route:  KSAN BRDR7 JLI KPSP" autocomplete="off" spellcheck="false">
     <button id="plotbtn" class="primary">Plot</button>
     <button id="newbtn" title="Clear route and start a new one">✏️ New</button>
     <button id="briefbtn">📋 Briefing</button>
@@ -273,15 +274,16 @@ setBase('osm');
 
 // route lines (redrawable)
 var routeGroup = L.layerGroup().addTo(map);
+var ROUTELINE=[];   // full expanded route: [[la,lo],...]
+var ROUTEWPTS=[];   // [{id,la,lo,kind}] enroute fixes/navaids + airports
 function redrawRoute(){
   routeGroup.clearLayers();
-  var sun=(ROUTE.sun||[]).map(function(k){return COORD[k];}).filter(Boolean);
-  if(sun.length>1){
-    L.polyline(sun,{color:'#0b3d91',weight:6,opacity:.55}).addTo(routeGroup);
-    L.polyline(sun,{color:'#4aa3ff',weight:2.5,opacity:.95}).addTo(routeGroup);
+  var ll=(ROUTELINE||[]).filter(Boolean);
+  if(ll.length>1){
+    L.polyline(ll,{color:'#0b3d91',weight:6,opacity:.55}).addTo(routeGroup);
+    L.polyline(ll,{color:'#4aa3ff',weight:2.5,opacity:.95}).addTo(routeGroup);
   }
-  var tue=(ROUTE.tue||[]).map(function(k){return COORD[k];}).filter(Boolean);
-  if(tue.length>1) L.polyline(tue,{color:'#c25e00',weight:3,opacity:.9,dashArray:'8 7'}).addTo(routeGroup);
+  (ROUTEWPTS||[]).forEach(function(w){ if(w.kind && w.kind!=='apt'){ L.circleMarker([w.la,w.lo],{radius:2.6,color:'#0b3d91',weight:1,fillColor:'#fff',fillOpacity:1}).addTo(routeGroup).bindTooltip(w.id,{direction:'top',offset:[0,-3]}); } });
 }
 redrawRoute();
 
@@ -700,19 +702,20 @@ document.getElementById('regin').addEventListener('input',function(){ var self=t
 startADSB();
 
 // ---------- dynamic route entry + airport lookup ----------
-var AIRPORTS={};
-fetch('airports.json').then(function(r){return r.json();}).then(function(j){ AIRPORTS=j;
+var AIRPORTS={}, DB={airports:{},navaids:{},fixes:{},airways:{},procedures:{}};
+function _pwJSON(u){ return fetch(u).then(function(r){return r.json();}).catch(function(){return {};}); }
+Promise.all([_pwJSON('airports.json'),_pwJSON('navaids.json'),_pwJSON('fixes.json'),_pwJSON('airways.json'),_pwJSON('procedures.json')]).then(function(D){
+  AIRPORTS=D[0]||{}; DB.airports=AIRPORTS; DB.navaids=D[1]||{}; DB.fixes=D[2]||{}; DB.airways=D[3]||{}; DB.procedures=D[4]||{};
   var ri=document.getElementById('routein'); var saved=null; try{saved=localStorage.getItem('pw_route');}catch(e){}
   var urlRoute=null; try{ urlRoute=new URLSearchParams(location.search).get('route'); }catch(e){}
   var initRoute = urlRoute || saved || (ROUTE.sun||[]).join(' ');
   if(ri) ri.value = initRoute;
-  // tracked tail number: URL ?reg= → saved → default
   var urlReg=null,savedReg=null; try{ urlReg=new URLSearchParams(location.search).get('reg'); }catch(e){}
   try{ savedReg=localStorage.getItem('pw_reg'); }catch(e){}
-  if(urlReg||savedReg) regExplicit=true;   // a shared-link or last-chosen tail (incl. from the briefing) wins over the profile default
+  if(urlReg||savedReg) regExplicit=true;
   REG=((urlReg||savedReg||'').toUpperCase().replace(/[^A-Z0-9]/g,''));
   var rg=document.getElementById('regin'); if(rg) rg.value=REG;
-  setRouteMsg(Object.keys(j).length.toLocaleString()+' US airports loaded');
+  setRouteMsg(Object.keys(AIRPORTS).length.toLocaleString()+' airports · '+Object.keys(DB.fixes).length.toLocaleString()+' fixes · '+Object.keys(DB.airways).length.toLocaleString()+' airways');
   if(initRoute) plotRoute(initRoute);
   resetAdsb(); if(map.hasLayer(adsbGroup)) fetchADSB();
 }).catch(function(){ setRouteMsg('airport DB failed to load'); });
@@ -733,20 +736,23 @@ function dedupeRoute(ids){ var o=ids.slice();
   var out=[]; for(var i=0;i<o.length;i++){ if(i===0||o[i]!==o[i-1]) out.push(o[i]); } return out; }   // then drop consecutive dups
 function plotRoute(text){
   if(!Object.keys(AIRPORTS).length){ setRouteMsg('airport data still loading…'); return false; }
-  var ids=dedupeRoute((text||'').trim().toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
-  var found=[], missing=[];
-  ids.forEach(function(id){ var a=resolveId(id); if(a) found.push([id,a[0],a[1],a[2]]); else missing.push(id); });
-  if(found.length<2){ setRouteMsg('need ≥2 valid airports'+(missing.length?' · unknown: '+missing.join(', '):'')); return false; }
+  var raw=(text||'').trim().toUpperCase();
+  var exp=(window.PWRoute?PWRoute.expand(raw,DB):{points:[],unresolved:[],notes:[]});
+  var found=exp.points.filter(function(p){return p.kind==='apt';}).map(function(p){return [p.id,p.la,p.lo];});
+  if(found.length<2){ setRouteMsg('need ≥2 valid airports'+(exp.unresolved.length?' · unknown: '+exp.unresolved.join(', '):'')); return false; }
   STATIONS=found.map(function(f){return [f[0],f[1],f[2]];});
   COORD={}; STATIONS.forEach(function(s){COORD[s[0]]=[s[1],s[2]];});
   ROUTE={sun:found.map(function(f){return f[0];}), tue:[]};
-  try{ localStorage.setItem('pw_route', ROUTE.sun.join(' ')); }catch(e){}
-  try{ var ri2=document.getElementById('routein'); if(ri2) ri2.value=ROUTE.sun.join(' '); history.replaceState(null,'',shareURL()); }catch(e){}
+  ROUTEWPTS=exp.points; ROUTELINE=exp.points.map(function(p){return [p.la,p.lo];});
+  try{ localStorage.setItem('pw_route', raw); }catch(e){}
+  try{ var ri2=document.getElementById('routein'); if(ri2) ri2.value=raw; history.replaceState(null,'',shareURL()); }catch(e){}
   redrawRoute();
-  map.fitBounds(L.latLngBounds(found.map(function(f){return [f[1],f[2]];})),{padding:[70,70],maxZoom:9});
+  var fb=ROUTELINE.length>1?ROUTELINE:found.map(function(f){return [f[1],f[2]];});
+  map.fitBounds(L.latLngBounds(fb),{padding:[70,70],maxZoom:9});
   var h1=document.querySelector('#hdr h1'); if(h1) h1.innerHTML=REG+' · '+found.map(function(f){return f[0];}).join(' → ');
   loadMetars();
-  setRouteMsg(missing.length?('plotted · unknown: '+missing.join(', ')):('plotted '+found.length+' fields'));
+  var uw=exp.unresolved.length?(' · unknown: '+exp.unresolved.join(', ')):'';
+  setRouteMsg('plotted '+exp.points.length+' pts / '+found.length+' fields'+uw);
   if(document.getElementById('brief').classList.contains('open')) buildBriefing();
   return true;
 }
