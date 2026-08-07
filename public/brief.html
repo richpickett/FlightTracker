@@ -168,32 +168,32 @@ var FOOD_CACHE={};
 function loadFood(pts){
   var box=document.getElementById('food'); if(!box) return;
   var all=pts.filter(function(p){return p.la!=null&&p.lo!=null;});
-  var seen={}, fields=[]; all.forEach(function(p){ if(!seen[p.id]){seen[p.id]=1;fields.push(p);} });  // unique airports only
-  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~1 sm (OpenStreetMap, incl. on-field) — verify by phone.</div>';
+  var seen={}, fields=[]; all.forEach(function(p){ if(!seen[p.id]){seen[p.id]=1;fields.push(p);} });
+  box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~2 sm (Google Places) — verify hours by phone.</div>';
   var rows={};
   fields.forEach(function(p){ var blk=document.createElement('div'); blk.className='wxrow'; blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>'; box.appendChild(blk); rows[p.id]=blk; });
   function renderField(p,places){
     var blk=rows[p.id]; if(!blk) return;
-    var near=(places||[]).map(function(e){return {e:e,d:smDist(p.la,p.lo,e.lat,e.lon)};}).filter(function(x){return x.d<=1.05;});
+    var near=(places||[]).map(function(e){return {e:e,d:smDist(p.la,p.lo,e.lat,e.lon)};}).filter(function(x){return x.d<=2.05;});
     near.sort(function(a,b){return a.d-b.d;}); var top=near.slice(0,8);
-    if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">none in OSM within 1 sm — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; return; }
+    if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no food found — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; return; }
     blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.e;
-      var c=e.cuisine?(' · '+nesc(e.cuisine.replace(/[;_]/g,function(y){return y===';'?', ':' ';}))):'';
-      return '<span class="raw">'+nesc(e.name)+' <span style="color:#889">('+foodLabel(e.amenity)+c+' · '+x.d.toFixed(1)+' sm)</span></span>';
+      var rt=(e.rating!=null)?(' ★'+(+e.rating).toFixed(1)+(e.count?' ('+e.count+')':'')):'';
+      var ty=e.type?(' · '+nesc(e.type)):'';
+      var nm=e.mapsUri?('<a class="inline" href="'+e.mapsUri+'" target="_blank">'+nesc(e.name)+'</a>'):nesc(e.name);
+      return '<span class="raw">'+nm+' <span style="color:#889">('+x.d.toFixed(1)+' sm'+ty+rt+')</span></span>';
     }).join('');
   }
-  // concurrency-limited parallel (fast, but capped so Overpass doesn't rate-limit); cached per airport
-  var qi=0, active=0, LIMIT=2;   // overpass-api.de allows only 2 parallel queries per IP
+  var qi=0, active=0, LIMIT=3;
   function pump(){
     while(active<LIMIT && qi<fields.length){
       (function(p){ active++;
         var to=setTimeout(function(){ var blk=rows[p.id]; if(blk && blk.innerHTML.indexOf('…')>=0){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; } }, 9000);
         var done=function(){ clearTimeout(to); active--; pump(); };
         if(FOOD_CACHE[p.id]){ renderField(p,FOOD_CACHE[p.id]); return done(); }
-        overpass(foodQuery(p.la,p.lo)).then(function(j){
-          var places=(j.elements||[]).map(function(el){ var la=el.lat!=null?el.lat:(el.center&&el.center.lat), lo=el.lon!=null?el.lon:(el.center&&el.center.lon); var t=el.tags||{}; var nm=t.name||t.brand; return (nm&&la!=null)?{name:nm,amenity:t.amenity||'restaurant',cuisine:t.cuisine||'',lat:la,lon:lo}:null; }).filter(Boolean);
-          FOOD_CACHE[p.id]=places; renderField(p,places);
-        }).catch(function(){ var blk=rows[p.id]; if(blk) blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; }).then(done,done);
+        fetch('/.netlify/functions/food?lat='+p.la+'&lon='+p.lo+'&radius=3218').then(function(r){return r.json();}).then(function(j){
+          var places=(j&&j.places)?j.places:[]; FOOD_CACHE[p.id]=places; renderField(p,places); done();
+        }).catch(function(){ var blk=rows[p.id]; if(blk) blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; done(); });
       })(fields[qi++]);
     }
   }
