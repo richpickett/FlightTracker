@@ -173,13 +173,15 @@ function loadFood(pts){
   box.className=''; box.innerHTML='<div class="sub">Restaurants/cafés within ~2 sm (Google Places) — verify hours by phone.</div>';
   var rows={};
   fields.forEach(function(p){ var blk=document.createElement('div'); blk.className='wxrow'; blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>'; box.appendChild(blk); rows[p.id]=blk; });
-  // On-field = essentially at the airport reference point (<=0.4 sm) OR the place name says airport/airfield.
-  // We intentionally DON'T match the airport-name token against addresses: for city-named fields
-  // (e.g. Camarillo) the city appears in every local address and would tag the whole town.
-  function isOnField(p,e,d){ return d<=0.4 || /\bair(port|field)\b/i.test(e.name||''); }
-  function renderField(p,places){
+  // street name only (house number stripped), normalized — must match the airport's street string from food.js
+  function streetOf(a){ if(!a) return ''; var s=String(a).split(',')[0].replace(/^\s*\d+[-\s]*/,'').replace(/\b(ste|suite|unit|#).*$/i,''); return s.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+  // On-field = place name says airport/airfield, OR the place shares the airport's street (number ignored).
+  // No distance rule: big fields put on-field spots >1 sm from the ARP, and near-ARP off-field spots false-tagged.
+  function isOnField(e,aptStreet){ if(/\bair(port|field)\b/i.test(e.name||'')) return true; var s=streetOf(e.addr); return !!(aptStreet && s && s===aptStreet); }
+  function renderField(p,data){
     var blk=rows[p.id]; if(!blk) return;
-    var near=(places||[]).map(function(e){var d=smDist(p.la,p.lo,e.lat,e.lon);return {e:e,d:d,of:isOnField(p,e,d)};}).filter(function(x){return x.d<=2.05;});
+    var places=(data&&data.places)||[], aptStreet=(data&&data.aptStreet)||'';
+    var near=places.map(function(e){var d=smDist(p.la,p.lo,e.lat,e.lon);return {e:e,d:d,of:isOnField(e,aptStreet)};}).filter(function(x){return x.d<=2.05;});
     near.sort(function(a,b){ if(a.of!==b.of) return a.of?-1:1; return a.d-b.d; }); var top=near.slice(0,8);
     if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no food found — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; return; }
     blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.e;
@@ -199,7 +201,7 @@ function loadFood(pts){
         var done=function(){ clearTimeout(to); active--; pump(); };
         if(FOOD_CACHE[p.id]){ renderField(p,FOOD_CACHE[p.id]); return done(); }
         fetch('/.netlify/functions/food?lat='+p.la+'&lon='+p.lo+'&radius=3218').then(function(r){return r.json();}).then(function(j){
-          var places=(j&&j.places)?j.places:[]; FOOD_CACHE[p.id]=places; renderField(p,places); done();
+          var data={places:(j&&j.places)?j.places:[], aptStreet:(j&&j.aptStreet)||''}; FOOD_CACHE[p.id]=data; renderField(p,data); done();
         }).catch(function(){ var blk=rows[p.id]; if(blk) blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; done(); });
       })(fields[qi++]);
     }
