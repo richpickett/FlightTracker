@@ -187,7 +187,8 @@ function loadFood(pts){
   function pump(){
     while(active<LIMIT && qi<fields.length){
       (function(p){ active++;
-        var done=function(){ active--; pump(); };
+        var to=setTimeout(function(){ var blk=rows[p.id]; if(blk && blk.innerHTML.indexOf('…')>=0){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">search maps ↗</a></span>'; } }, 9000);
+        var done=function(){ clearTimeout(to); active--; pump(); };
         if(FOOD_CACHE[p.id]){ renderField(p,FOOD_CACHE[p.id]); return done(); }
         overpass(foodQuery(p.la,p.lo)).then(function(j){
           var places=(j.elements||[]).map(function(el){ var la=el.lat!=null?el.lat:(el.center&&el.center.lat), lo=el.lon!=null?el.lon:(el.center&&el.center.lon); var t=el.tags||{}; var nm=t.name||t.brand; return (nm&&la!=null)?{name:nm,amenity:t.amenity||'restaurant',cuisine:t.cuisine||'',lat:la,lon:lo}:null; }).filter(Boolean);

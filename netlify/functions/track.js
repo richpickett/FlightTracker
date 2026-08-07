@@ -30,7 +30,16 @@ exports.handler = async (event) => {
       lastBody = JSON.stringify(lj).slice(0, 300);
       if (a) { ac = a; used = f; break; }
     }
-    if (!ac) return J(200, { reg, live: null, tracks: [], note: "no active flight", debug: { tried, status: lastStatus, body: lastBody } });
+    if (!ac) {
+      let probe;
+      try {
+        const pr = await fetch(`${FR24}/live/flight-positions/full?bounds=34.5,33,-119,-116&limit=5`, { headers: H });
+        const pb = await pr.text();
+        let cnt = "?"; try { const pj = JSON.parse(pb); const pd = (pj && (pj.data || pj)) || []; cnt = Array.isArray(pd) ? pd.length : "?"; } catch (e) {}
+        probe = { status: pr.status, count: cnt, body: pb.slice(0, 160) };
+      } catch (e) { probe = { error: String(e && e.message) }; }
+      return J(200, { reg, live: null, tracks: [], note: "no active flight", debug: { tried, status: lastStatus, body: lastBody, boundsProbe: probe } });
+    }
     const live = {
       lat: ac.lat, lon: ac.lon, track: ac.track,
       alt_baro: ac.alt, gs: ac.gspeed, baro_rate: ac.vspeed,
