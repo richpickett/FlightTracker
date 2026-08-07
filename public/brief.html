@@ -78,14 +78,14 @@ function depEpoch(){
 function getRoute(){var u=new URLSearchParams(location.search).get('route');if(u)return u;try{var s=localStorage.getItem('pw_route');if(s)return s;}catch(e){}return 'KSAN BRDR7 JLI KPSP';}
 function saveAC(){try{var o={};['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv'].forEach(function(k){o[k]=document.getElementById(k).value;});localStorage.setItem('pw_ac',JSON.stringify(o));localStorage.setItem('pw_reg',(document.getElementById('reg')||{}).value||'');}catch(e){}}
 function loadAC(){try{var a=JSON.parse(localStorage.getItem('pw_ac')||'{}');['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv'].forEach(function(k){if(a[k]!=null&&a[k]!=='')document.getElementById(k).value=a[k];});var rr=localStorage.getItem('pw_reg');if(rr){var re=document.getElementById('reg');if(re)re.value=rr.toUpperCase();}}catch(e){}}
-function setRoute(str){try{localStorage.setItem('pw_route',str);}catch(e){}history.replaceState(null,'',location.pathname+'?route='+encodeURIComponent(str));}
+function setRoute(str){var rg=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');try{localStorage.setItem('pw_route',str);if(rg)localStorage.setItem('pw_reg',rg);}catch(e){}history.replaceState(null,'',location.pathname+'?route='+encodeURIComponent(str)+(rg?'&reg='+encodeURIComponent(rg):''));}
 
 function _pwJSON(u,o){ return fetch(u,o||{}).then(function(r){return r.json();}).catch(function(){return {};}); }
 Promise.all([
   _pwJSON('/wx/airports.json'),
   _pwJSON('/wx/wx-config.json',{cache:'no-store'}),
   _pwJSON('/wx/navaids.json'), _pwJSON('/wx/fixes.json'), _pwJSON('/wx/airways.json'), _pwJSON('/wx/procedures.json')
-]).then(function(res){AIRPORTS=res[0]||{};CFG=res[1]||{};DB.airports=AIRPORTS;DB.navaids=res[2]||{};DB.fixes=res[3]||{};DB.airways=res[4]||{};DB.procedures=res[5]||{};loadAC();
+]).then(function(res){AIRPORTS=res[0]||{};CFG=res[1]||{};DB.airports=AIRPORTS;DB.navaids=res[2]||{};DB.fixes=res[3]||{};DB.airways=res[4]||{};DB.procedures=res[5]||{};loadAC(); try{var _ur=new URLSearchParams(location.search).get('reg'); if(_ur){var _re=document.getElementById('reg'); if(_re) _re.value=_ur.toUpperCase().replace(/[^A-Z0-9]/g,'');}}catch(e){}
   var dd=document.getElementById('depdate'); if(dd&&!dd.value){var n=new Date();dd.value=n.getFullYear()+'-'+('0'+(n.getMonth()+1)).slice(-2)+'-'+('0'+n.getDate()).slice(-2);}
   var r=getRoute();document.getElementById('rin').value=r;render(r);});
 
@@ -127,9 +127,9 @@ function render(routeStr){
   var legs=[],maxE=-9999,maxId='';
   var apI=[]; ALLPTS.forEach(function(pp,ix){ if(pp.kind==='apt') apI.push(ix); });
   for(var i=0;i<pts.length-1;i++){var a=[pts[i].la,pts[i].lo],b=[pts[i+1].la,pts[i+1].lo];
-    var s=apI[i], e=apI[i+1], d=0;
-    if(s!=null&&e!=null&&e>s){ for(var k=s;k<e;k++){ d+=gcNm([ALLPTS[k].la,ALLPTS[k].lo],[ALLPTS[k+1].la,ALLPTS[k+1].lo]); } } else { d=gcNm(a,b); }
-    legs.push({d:d,crs:brg(a,b),mid:[(a[0]+b[0])/2,(a[1]+b[1])/2]});}
+    var s=apI[i], e=apI[i+1], d=0, sub;
+    if(s!=null&&e!=null&&e>s){ for(var k=s;k<e;k++){ d+=gcNm([ALLPTS[k].la,ALLPTS[k].lo],[ALLPTS[k+1].la,ALLPTS[k+1].lo]); } sub=ALLPTS.slice(s,e+1).map(function(q){return [q.la,q.lo];}); } else { d=gcNm(a,b); sub=[a,b]; }
+    legs.push({d:d,crs:brg(a,b),mid:[(a[0]+b[0])/2,(a[1]+b[1])/2],pts:sub});}
   pts.forEach(function(p){if(p.el!=null&&p.el>maxE){maxE=p.el;maxId=p.id;}});
   STATE={pts:pts,legs:legs,CR:CR,TAS:TAS,USABLE:USABLE,GPH:GPH,RSV:RSV,lv:nearestLv(CR),maxE:maxE,maxId:maxId,dep:depEpoch()};
   var depTxt=(document.getElementById('dep').value?('dep '+hhmmL(STATE.dep)+'L / '+hhmmZ(STATE.dep)):'dep now');
@@ -270,14 +270,51 @@ function narrative(T,totHr,totBurn,haveW,showDep){
   return s;
 }
 
+function _samplePath(coords,n){
+  if(!coords||!coords.length) return [];
+  if(coords.length===1) return [coords[0]];
+  var segs=[],tot=0,i;
+  for(i=0;i<coords.length-1;i++){var dd=gcNm(coords[i],coords[i+1]);segs.push(dd);tot+=dd;}
+  if(!(tot>0)) return [coords[0]];
+  var out=[];
+  for(var k=0;k<n;k++){ var target=tot*(k+0.5)/n, acc=0, j=0;
+    while(j<segs.length-1 && acc+segs[j]<target){acc+=segs[j];j++;}
+    var f=segs[j]>0?(target-acc)/segs[j]:0;
+    out.push([coords[j][0]+(coords[j+1][0]-coords[j][0])*f, coords[j][1]+(coords[j+1][1]-coords[j][1])*f]);
+  }
+  return out;
+}
 function loadWinds(){
-  var S=STATE, lvls=LV.map(function(l){return l[0];});
+  var S=STATE, lvls=LV.map(function(l){return l[0];}), N=5;
   var params=[]; lvls.forEach(function(p){params.push('wind_speed_'+p+'hPa','wind_direction_'+p+'hPa','temperature_'+p+'hPa');});
-  var lats=S.legs.map(function(L){return L.mid[0].toFixed(3);}).join(','), lons=S.legs.map(function(L){return L.mid[1].toFixed(3);}).join(',');
-  fetch('https://api.open-meteo.com/v1/forecast?latitude='+lats+'&longitude='+lons+'&hourly='+params.join(',')+'&wind_speed_unit=kn&forecast_days=3&timezone=UTC')
+  var samples=S.legs.map(function(L){ return _samplePath((L.pts&&L.pts.length)?L.pts:[[L.mid[0],L.mid[1]]], N); });
+  var counts=samples.map(function(ps){return ps.length;});
+  var lat=[],lon=[]; samples.forEach(function(ps){ps.forEach(function(p){lat.push(p[0].toFixed(3));lon.push(p[1].toFixed(3));});});
+  fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat.join(',')+'&longitude='+lon.join(',')+'&hourly='+params.join(',')+'&wind_speed_unit=kn&forecast_days=3&timezone=UTC')
     .then(function(r){return r.json();}).then(function(arr){
       if(!Array.isArray(arr))arr=[arr];
-      WINDARR=arr.map(function(loc){ if(!loc.hourly)return null; var o={time:loc.hourly.time}; lvls.forEach(function(p){o['ws'+p]=loc.hourly['wind_speed_'+p+'hPa'];o['wd'+p]=loc.hourly['wind_direction_'+p+'hPa'];o['t'+p]=loc.hourly['temperature_'+p+'hPa'];}); return o; });
+      var off=0;
+      WINDARR=S.legs.map(function(L,idx){
+        var n=counts[idx], locs=arr.slice(off,off+n).filter(function(l){return l&&l.hourly;}); off+=n;
+        if(!locs.length) return null;
+        var time=locs[0].hourly.time, o={time:time};
+        lvls.forEach(function(p){
+          var wsA=[],wdA=[],tA=[];
+          for(var ti=0;ti<time.length;ti++){
+            var su=0,sv=0,st=0,nw=0,nt=0;
+            for(var li=0;li<locs.length;li++){ var h=locs[li].hourly;
+              var dd=h['wind_direction_'+p+'hPa'], sp2=h['wind_speed_'+p+'hPa'], tc=h['temperature_'+p+'hPa'];
+              if(dd&&sp2&&dd[ti]!=null&&sp2[ti]!=null){ var rr=dd[ti]*Math.PI/180; su+=-sp2[ti]*Math.sin(rr); sv+=-sp2[ti]*Math.cos(rr); nw++; }
+              if(tc&&tc[ti]!=null){ st+=tc[ti]; nt++; }
+            }
+            if(nw){ var u=su/nw,v=sv/nw; wsA.push(Math.sqrt(u*u+v*v)); wdA.push((Math.atan2(-u,-v)*180/Math.PI+360)%360); }
+            else { wsA.push(null); wdA.push(null); }
+            tA.push(nt?st/nt:null);
+          }
+          o['ws'+p]=wsA; o['wd'+p]=wdA; o['t'+p]=tA;
+        });
+        return o;
+      });
       compute();
       // winds table at leg start times, highlight cruise
       var cols=[[850,'5k'],[700,'FL100'],[500,'FL180'],[300,'FL300'],[200,'FL390']];
@@ -285,7 +322,7 @@ function loadWinds(){
       var T=legTimes(true),th='<table><tr><th>Leg</th><th>@</th>'+cols.map(function(c){return '<th class="'+(c[0]===S.lv[0]?'hl':'')+'">'+(c[0]===S.lv[0]?'★':'')+c[1]+'</th>';}).join('')+'</tr>';
       S.legs.forEach(function(L,idx){ var wa=WINDARR[idx]; if(!wa){return;} var ix=wa.time.indexOf(hourStr(T.startMs[idx]));if(ix<0)ix=0;
         th+='<tr><td>'+S.pts[idx].id+'–'+S.pts[idx+1].id+'</td><td>'+hhmmZ(T.startMs[idx])+'</td>'+cols.map(function(c){var dr=wa['wd'+c[0]],sp=wa['ws'+c[0]],tp=wa['t'+c[0]];var v=(dr&&dr[ix]!=null)?Math.round(dr[ix])+'°/'+Math.round(sp[ix])+'kt'+(tp&&tp[ix]!=null?'<br><span style="color:#889">'+Math.round(tp[ix])+'°C</span>':''):'—';return '<td class="'+(c[0]===S.lv[0]?'hl':'')+'">'+v+'</td>';}).join('')+'</tr>';});
-      th+='</table><div class="sub">★ cruise level ('+S.lv[2]+'). Winds shown at each leg\'s time.</div>';
+      th+='</table><div class="sub">★ cruise level ('+S.lv[2]+'). Winds averaged over 5 points along each leg, at the leg\'s time.</div>';
       document.getElementById('wind').innerHTML=th;
     }).catch(function(){document.getElementById('wind').innerHTML='<span style="color:#889">winds unavailable — legs zero-wind</span>';});
 }
