@@ -1,7 +1,7 @@
 // Personal Wings — Flightradar24 proxy (Netlify Function). Token in env FR24_TOKEN (server-side only).
-// Call: /.netlify/functions/track?reg=N7SG  (tail)  or  ?reg=SKW4084 (airline callsign)
-// Returns {live:{...current position...}, tracks:[{t,lat,lon,...}]} for a flight airplanes.live may not cover.
-// Used only as a FALLBACK (airplanes.live is primary) and for the animated history track.
+// Call: /.netlify/functions/track?reg=N7SG (tail) or ?reg=SKW4084 (airline callsign)
+// Returns {live:{...current position...}, tracks:[{t,lat,lon,...}]}. Used only as a fallback
+// (airplanes.live is primary) and for the animated history track.
 const FR24 = "https://fr24api.flightradar24.com/api";
 exports.handler = async (event) => {
   const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,OPTIONS", "Cache-Control": "public, max-age=30" };
@@ -12,16 +12,25 @@ exports.handler = async (event) => {
   const token = process.env.FR24_TOKEN;
   if (!token) return J(200, { reg, live: null, tracks: [], note: "FR24_TOKEN not set" });
   const H = { "Authorization": "Bearer " + token, "Accept": "application/json", "Accept-Version": "v1" };
-  // 3-letter airline code + digit => callsign; otherwise treat as a registration (tail).
+  // 3-letter airline code + digit => try callsign/flight first; a tail => registration first.
   const isCallsign = /^[A-Z]{3}[0-9]/.test(reg);
-  const filter = isCallsign ? ("callsigns=" + reg) : ("registrations=" + reg);
+  const filters = isCallsign
+    ? ["callsigns=" + reg, "flights=" + reg, "registrations=" + reg]
+    : ["registrations=" + reg, "callsigns=" + reg, "flights=" + reg];
   try {
-    const lr = await fetch(`${FR24}/live/flight-positions/full?${filter}`, { headers: H });
-    if (!lr.ok) return J(200, { reg, live: null, tracks: [], note: "live " + lr.status + " " + (await lr.text()).slice(0,140) });
-    const lj = await lr.json();
-    const data = (lj && (lj.data || lj)) || [];
-    const ac = Array.isArray(data) ? data[0] : null;
-    if (!ac) return J(200, { reg, live: null, tracks: [], note: "no active flight", debug: { url: `live/flight-positions/full?${filter}`, status: lr.status, keys: Object.keys(lj||{}), body: JSON.stringify(lj).slice(0, 700) } });
+    let ac = null, used = "", tried = [], lastStatus = 0, lastBody = "";
+    for (const f of filters) {
+      const lr = await fetch(`${FR24}/live/flight-positions/full?${f}`, { headers: H });
+      lastStatus = lr.status;
+      if (!lr.ok) { lastBody = (await lr.text()).slice(0, 200); tried.push(f + "=>" + lr.status); continue; }
+      const lj = await lr.json();
+      const data = (lj && (lj.data || lj)) || [];
+      const a = Array.isArray(data) ? data[0] : null;
+      tried.push(f + "=>" + (Array.isArray(data) ? data.length : "?"));
+      lastBody = JSON.stringify(lj).slice(0, 300);
+      if (a) { ac = a; used = f; break; }
+    }
+    if (!ac) return J(200, { reg, live: null, tracks: [], note: "no active flight", debug: { tried, status: lastStatus, body: lastBody } });
     const live = {
       lat: ac.lat, lon: ac.lon, track: ac.track,
       alt_baro: ac.alt, gs: ac.gspeed, baro_rate: ac.vspeed,
@@ -42,7 +51,7 @@ exports.handler = async (event) => {
         })).filter(p => p.t && p.lat != null && p.lon != null);
       }
     }
-    return J(200, { reg, fr24_id: fid || null, live, tracks });
+    return J(200, { reg, fr24_id: fid || null, matched: used, live, tracks });
   } catch (e) {
     return J(200, { reg, live: null, tracks: [], note: "error " + (e && e.message) });
   }
