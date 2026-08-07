@@ -65,7 +65,7 @@
       $('#pw-save').onclick=saveRoute; $('#pw-out').onclick=signOut; $('#pw-regsave').onclick=saveDefaultReg; listRoutes();
     }
   }
-  function toggle(){var p=$('#pwacct'); p.classList.toggle('open'); if(p.classList.contains('open')) render();}
+  function toggle(){var p=$('#pwacct'); p.classList.toggle('open'); var open=p.classList.contains('open'); var cb=document.getElementById('pwacct-close'); if(cb) cb.style.display=open?'block':'none'; if(open) render();}
 
   function signIn(){var e=$('#pw-email').value.trim(),pw=$('#pw-pass').value;
     if(!e||!pw){msg('Enter email and password.');return;}
@@ -140,6 +140,7 @@
     else { TRIG=document.createElement('button'); TRIG.id='pwacct-btn'; document.body.appendChild(TRIG); }
     TRIG.onclick=toggle;
     var pan=document.createElement('div'); pan.id='pwacct'; document.body.appendChild(pan);
+    var pwClose=document.createElement('button'); pwClose.id='pwacct-close'; pwClose.type='button'; pwClose.setAttribute('aria-label','Close'); pwClose.textContent='\u2715'; pwClose.style.cssText='position:fixed;right:18px;top:62px;z-index:3001;background:none;border:none;color:#6b7889;font-size:16px;line-height:1;cursor:pointer;display:none;padding:2px 6px;width:auto'; document.body.appendChild(pwClose); pwClose.onclick=function(){ pan.classList.remove('open'); pwClose.style.display='none'; };
     window.PW_toggleAccount=toggle;
     // A password-recovery link lands here with type=recovery in the URL (hash or query).
     var wantRecovery=(location.hash+' '+location.search).indexOf('type=recovery')>=0;

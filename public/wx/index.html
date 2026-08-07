@@ -772,7 +772,7 @@ function briefMetarFB(id,ml){
 function buildBriefing(){
   var seq=(ROUTE.sun||[]).slice(); var body=document.getElementById('briefbody');
   if(seq.length<2){ body.innerHTML='<p>Enter a route and press Plot first.</p>'; return; }
-  var GS=145, tot=0, rows='';
+  var GS=(function(){try{var a=new URLSearchParams(location.search).get('ac');a=a?JSON.parse(a):JSON.parse(localStorage.getItem('pw_ac')||'{}');var t=parseFloat(a.tas);return t>0?t:145;}catch(e){return 145;}})(), tot=0, rows='';
   for(var i=0;i<seq.length-1;i++){ var a=COORD[seq[i]],b=COORD[seq[i+1]]; var d=gcNm(a,b); tot+=d;
     rows+='<tr><td>'+seq[i]+' → '+seq[i+1]+'</td><td>'+Math.round(d)+' nm</td><td>'+bearing(a,b)+'°</td><td>'+(d/GS).toFixed(1)+' hr</td></tr>'; }
   var html='<h3>'+seq.join(' → ')+'</h3>';
