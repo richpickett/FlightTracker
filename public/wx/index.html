@@ -345,20 +345,21 @@ var lightLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/geoserver/lightning_
 // 404 outside the cache → transparent, so zoom in to see them; above native zoom Leaflet upscales).
 var CHART_BASE='https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/';
 var CHARTS={
-  vfr:     {svc:'VFR_Sectional', min:8,  maxNative:12, label:'VFR Sectional', plan:true},
+  vfr:     {svc:'VFR_Sectional', min:11, maxNative:12, label:'VFR Sectional', plan:true},
   tac:     {svc:'VFR_Terminal',  min:10, maxNative:12, label:'VFR Terminal (TAC, metro only)'},
   ifrlow:  {svc:'IFR_AreaLow',   min:7,  maxNative:12, label:'IFR Low'},
   ifrhigh: {svc:'IFR_High',      min:5,  maxNative:9,  label:'IFR High'}
 };
 var chartLayer=null, chartOp=1;
-// Personal Wings VFR wall-planning chart — self-hosted low-zoom tiles (z3-7), stored in
-// public/wx/vfrplan/. Reprojected to web-mercator from the source GeoTIFF. It fills the gap
-// BELOW z8, where the FAA VFR_Sectional cache begins, so selecting "VFR Sectional" gives a
-// continuous chart: national planning overview (z3-7) → FAA sectional detail (z8-12).
-// maxZoom:7 means Leaflet stops requesting it at z8, handing off to the sectional cleanly.
+// Personal Wings VFR wall-planning chart — self-hosted tiles (z3-9 native), stored in
+// public/wx/vfrplan/. Reprojected to web-mercator from the source GeoTIFF (~262 m/px, so z9
+// is its true native resolution; z10 is Leaflet-upscaled 2x from z9). It covers the range
+// BELOW z11, where the FAA VFR_Sectional cache takes over. Selecting "VFR Sectional" gives a
+// continuous chart: planning overview/detail (z3-10) → FAA sectional detail (z11-12).
+// maxZoom:10 means Leaflet stops requesting it at z11, handing off to the sectional cleanly.
 var PLAN_BOUNDS = L.latLngBounds([21.55,-129.92],[51.75,-64.14]);
 var planLayer = L.tileLayer('vfrplan/{z}/{x}/{y}.png',{
-  minZoom:3, maxZoom:7, minNativeZoom:3, maxNativeZoom:7, bounds:PLAN_BOUNDS,
+  minZoom:3, maxZoom:10, minNativeZoom:3, maxNativeZoom:9, bounds:PLAN_BOUNDS,
   zIndex:300, opacity:chartOp, errorTileUrl:TRANSPARENT,
   attribution:'VFR planning chart &copy; Personal Wings'});
 function selectChart(key){
@@ -366,7 +367,7 @@ function selectChart(key){
   if(map.hasLayer(planLayer)) map.removeLayer(planLayer);
   var c=CHARTS[key]; if(!c) return;
   chartLayer=L.tileLayer(CHART_BASE+c.svc+'/MapServer/tile/{z}/{y}/{x}',{
-    maxZoom:12, maxNativeZoom:c.maxNative, zIndex:300, opacity:chartOp,
+    minZoom:c.min, maxZoom:12, maxNativeZoom:c.maxNative, zIndex:300, opacity:chartOp,
     errorTileUrl:TRANSPARENT, attribution:'Aeronautical charts © FAA'}).addTo(map);
   if(c.plan){ planLayer.setOpacity(chartOp); planLayer.addTo(map); }
 }
