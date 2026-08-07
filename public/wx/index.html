@@ -35,7 +35,7 @@
   #hdr .brand>div{min-width:0}
   body.shared #routein, body.shared #plotbtn, body.shared #newbtn, body.shared a.hubback[href="/"]{display:none!important}
   /* Controls panel */
-  #ctl{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:1000;width:min(96vw,720px);
+  #ctl{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:1000;width:min(98vw,1024px);
        background:var(--panel);backdrop-filter:blur(6px);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
   .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .row+.row{margin-top:8px}
@@ -54,7 +54,7 @@
   select{background:#eef2f7;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px}
   a.btnlink{background:#0b3d91;color:#eaf2fb;border:1px solid #4aa3ff;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600;text-decoration:none;display:inline-block;white-space:nowrap}
   a.btnlink:hover{background:#12468f}
-  #routein{flex:1;min-width:180px;background:#f7faff;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;letter-spacing:.5px}
+  #routein{flex:1;min-width:180px;background:#f7faff;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;letter-spacing:.5px;box-sizing:border-box;font-family:inherit;resize:vertical;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.35;min-height:34px}
   #routein::placeholder{color:#9aa7b5}
   #sharebtn{background:#16a34a;color:#fff;border-color:#16a34a;font-weight:600}
   #sharebtn:hover{background:#15803d}
@@ -158,7 +158,7 @@
 
 <div id="ctl">
   <div class="row" style="border-bottom:1px solid var(--line);padding-bottom:8px">
-    <input id="routein" placeholder="Route:  KSAN BRDR7 JLI KPSP" autocomplete="off" spellcheck="false">
+    <textarea id="routein" rows="1" placeholder="Route:  KSAN BRDR7 JLI KPSP" autocomplete="off" spellcheck="false"></textarea>
     <button id="plotbtn" class="primary">Plot</button>
     <button id="newbtn" title="Clear route and start a new one">✏️ New</button>
     <button id="briefbtn">📋 Briefing</button>
@@ -778,7 +778,7 @@ function buildBriefing(){
   var html='<h3>'+seq.join(' → ')+'</h3>';
   html+='<div class="bnote">Total '+Math.round(tot)+' nm · ~'+(tot/GS).toFixed(1)+' hr @ '+GS+' kt · '+(seq.length-1)+' legs · '+new Date().toLocaleString()+'</div>';
   var maxE=-9999,maxId=''; seq.forEach(function(id){ var a=AIRPORTS[id]||AIRPORTS['K'+id]; if(a&&a[3]!=null&&a[3]>maxE){maxE=a[3];maxId=id;} });
-  html+='<div class="bnote"><a href="/brief.html?'+flightQ(seq.join(' '))+'" target="_blank"><b>Open full briefing page ↗</b></a>'+(maxE>-9999?(' · highest field <b>'+maxE.toLocaleString()+"′</b> ("+maxId+')'+(maxE>=8000?' — high DA':'')):'')+'</div>';
+  html+='<div class="bnote"><a href="/brief.html?'+flightQ((document.getElementById('routein')||{}).value||seq.join(' '))+'" target="_blank"><b>Open full briefing page ↗</b></a>'+(maxE>-9999?(' · highest field <b>'+maxE.toLocaleString()+"′</b> ("+maxId+')'+(maxE>=8000?' — high DA':'')):'')+'</div>';
   html+='<table class="btab"><tr><th>Leg</th><th>Dist</th><th>Course</th><th>Est</th></tr>'+rows+'</table>';
   html+='<h4>Current conditions</h4><div id="briefwx"></div>';
   html+='<h4>Winds aloft (fcst)</h4><div id="briefwind">loading…</div>';
