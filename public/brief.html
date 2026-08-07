@@ -200,7 +200,9 @@ function loadFood(pts){
         var to=setTimeout(function(){ var blk=rows[p.id]; if(blk && blk.innerHTML.indexOf('…')>=0){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">food lookup unavailable — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; } }, 9000);
         var done=function(){ clearTimeout(to); active--; pump(); };
         if(FOOD_CACHE[p.id]){ renderField(p,FOOD_CACHE[p.id]); return done(); }
-        fetch('/.netlify/functions/food?lat='+p.la+'&lon='+p.lo+'&radius=3218').then(function(r){return r.json();}).then(function(j){
+        // &v rotates hourly so the request URL changes every hour: busts any stale CDN-cached response
+        // (a fixed URL can get frozen at the edge for the full max-age) while still caching within the hour.
+        fetch('/.netlify/functions/food?lat='+p.la+'&lon='+p.lo+'&radius=3218&v='+Math.floor(Date.now()/3600000)).then(function(r){return r.json();}).then(function(j){
           var data={places:(j&&j.places)?j.places:[], aptStreet:(j&&j.aptStreet)||''}; FOOD_CACHE[p.id]=data; renderField(p,data); done();
         }).catch(function(){ var blk=rows[p.id]; if(blk) blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; done(); });
       })(fields[qi++]);
