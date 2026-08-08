@@ -115,7 +115,10 @@ Promise.all([
   _pwJSON('/wx/wx-config.json',{cache:'no-store'}),
   _pwJSON('/wx/navaids.json'), _pwJSON('/wx/fixes.json'), _pwJSON('/wx/airways.json'), _pwJSON('/wx/procedures.json')
 ]).then(function(res){AIRPORTS=res[0]||{};CFG=res[1]||{};DB.airports=AIRPORTS;DB.navaids=res[2]||{};DB.fixes=res[3]||{};DB.airways=res[4]||{};DB.procedures=res[5]||{}; var _SP=new URLSearchParams(location.search), _acRaw=_SP.get('ac'); window.PW_SHARED=!!_acRaw;
-  if(window.PW_SHARED){ try{var _ac=JSON.parse(_acRaw);['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(k){var e=document.getElementById(k); if(e&&_ac[k]!=null&&_ac[k]!=='') e.value=_ac[k];});}catch(e){} } else { var _f=fleetGet(); if(_f.def&&_f.list[_f.def]) acApply(_f.list[_f.def]); else loadAC(); fleetPopulate(); }
+  if(window.PW_SHARED){ try{var _ac=JSON.parse(_acRaw);['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(k){var e=document.getElementById(k); if(e&&_ac[k]!=null&&_ac[k]!=='') e.value=_ac[k];});}catch(e){} } else { var _hasAc=false; try{var _a=JSON.parse(localStorage.getItem('pw_ac')||'null'); _hasAc=!!(_a&&_a.reg);}catch(e){}
+    if(_hasAc){ loadAC(); }   // restore last-used aircraft (preserves selection across map↔briefing) — default only seeds a fresh slate
+    else { var _f=fleetGet(); if(_f.def&&_f.list[_f.def]) acApply(_f.list[_f.def]); else loadAC(); }
+    fleetPopulate(); }
   try{var _ur=_SP.get('reg'); if(_ur){var _re=document.getElementById('reg'); if(_re) _re.value=_ur.toUpperCase().replace(/[^A-Z0-9]/g,'');}}catch(e){}
   var dd=document.getElementById('depdate'); if(dd&&!dd.value){var n=new Date();dd.value=n.getFullYear()+'-'+('0'+(n.getMonth()+1)).slice(-2)+'-'+('0'+n.getDate()).slice(-2);}
   var r=getRoute();document.getElementById('rin').value=r;render(r); if(window.PW_SHARED) lockShared();});
@@ -553,7 +556,10 @@ window.PW_getState=function(){var g=function(id){return (document.getElementById
 window.PW_applyState=function(s){var st=function(id,v){var e=document.getElementById(id); if(e&&v!=null&&v!=='')e.value=v;}; if(s.aircraft){st('reg',s.aircraft.reg);st('depdate',s.aircraft.depdate);st('dep',s.aircraft.dep);st('deptz',s.aircraft.deptz);st('cruise',s.aircraft.cruise);st('tas',s.aircraft.tas);st('usable',s.aircraft.usable);st('gph',s.aircraft.gph);st('rsv',s.aircraft.rsv);st('amax',s.aircraft.amax);st('amin',s.aircraft.amin);} if(s.route){st('rin',s.route); if(typeof render==='function') render(s.route);} };
 // account sync hooks (used by pwauth.js): read the local fleet, or apply a fleet pulled from the account
 window.PW_getFleet=function(){ return fleetGet(); };
-window.PW_applyFleet=function(f){ if(!f||!f.list) return; PW_applyingFleet=true; try{ fleetPut(f); var o=(f.def&&f.list[f.def])?f.list[f.def]:null; if(o) acApply(o); saveAC(); fleetPopulate(f.def); if(typeof render==='function') render((document.getElementById('rin')||{}).value||''); } finally { PW_applyingFleet=false; } };
+window.PW_applyFleet=function(f){ if(!f||!f.list) return; PW_applyingFleet=true; try{ fleetPut(f);
+  var cur=((document.getElementById('reg')||{}).value||'').trim();
+  if(!cur){ var o=(f.def&&f.list[f.def])?f.list[f.def]:null; if(o){ acApply(o); saveAC(); if(typeof render==='function') render((document.getElementById('rin')||{}).value||''); } }  // don't clobber an aircraft already loaded
+  fleetPopulate(f.def); } finally { PW_applyingFleet=false; } };
 </script>
 <script src="/pwauth.js"></script>
 </body></html>
