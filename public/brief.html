@@ -28,6 +28,10 @@
   .foot{color:var(--dim);font-size:11px;margin-top:16px;border-top:1px solid var(--line);padding-top:8px}
   #mapwrap{position:relative;margin:8px 0} #bmap{height:340px;border:1px solid var(--line);border-radius:8px}
   .mapleg{font-size:11px;color:var(--dim);margin-top:4px} .mapleg .sw{display:inline-block;width:11px;height:11px;border-radius:2px;margin:0 3px 0 8px;vertical-align:middle}
+  #hzmap{height:320px;border:1px solid var(--line);border-radius:8px;margin:4px 0}
+  .mapctl{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--txt);margin:6px 0 2px}
+  .mapctl label{display:flex;align-items:center;gap:4px;cursor:pointer} .mapctl input{margin:0}
+  .mapctl .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px}
   .bm-lbl{background:#fff;border:1px solid #0b3d91;border-radius:4px;font:700 10px/1.4 Arial;color:#0b2e6b;text-align:center;padding:0 3px;box-shadow:0 1px 2px #0003;white-space:nowrap}
   @media print{ body{background:#fff} .sheet{box-shadow:none;max-width:none} .noprint{display:none!important} .leg{break-inside:avoid} #bmap{height:300px} }
 </style>
@@ -127,18 +131,21 @@ function buildMap(pts, allpts){
   full.forEach(function(p){ if(p.kind&&p.kind!=='apt'){ L.circleMarker([p.la,p.lo],{radius:2.4,color:'#0b3d91',weight:1,fillColor:'#fff',fillOpacity:1}).addTo(BMAP).bindTooltip(p.id,{direction:'top',offset:[0,-2]}); } });
   pts.forEach(function(p){ L.marker([p.la,p.lo],{icon:L.divIcon({className:'',html:'<div class="bm-lbl">'+p.id+'</div>',iconSize:[42,16],iconAnchor:[21,8]})}).addTo(BMAP); });
   try{ BMAP.fitBounds(ll,{padding:[34,34]}); }catch(e){}
-  fetch('https://www.spc.noaa.gov/products/outlook/day1otlk_cat.lyr.geojson').then(function(r){return r.json();}).then(function(g){
+  var oDay=outlookDay();   // SPC categorical outlook for the day matching departure (1–3)
+  fetch('https://www.spc.noaa.gov/products/outlook/day'+oDay+'otlk_cat.lyr.geojson').then(function(r){return r.json();}).then(function(g){
     var seen={};
     L.geoJSON(g,{style:function(f){var c=(f.properties&&f.properties.fill)||'#888';return {color:c,fillColor:c,weight:1,opacity:.55,fillOpacity:.25};},
       onEachFeature:function(f){ if(f.properties&&f.properties.LABEL) seen[f.properties.LABEL]=f.properties.fill; }}).addTo(BMAP);
     var CN={TSTM:'Gen TSTM',MRGL:'Marginal',SLGT:'Slight',ENH:'Enhanced',MDT:'Moderate',HIGH:'High'},order=['TSTM','MRGL','SLGT','ENH','MDT','HIGH'];
-    var out='<b>SPC Day 1 outlook:</b>'; var any=false;
+    var out='<b>SPC Day '+oDay+' outlook:</b>'; var any=false;
     order.forEach(function(k){ if(seen[k]){any=true; out+='<span class="sw" style="background:'+seen[k]+'"></span>'+CN[k];} });
-    var ml=document.getElementById('mapleg'); if(ml) ml.innerHTML=any?out:'<b>SPC Day 1:</b> no thunderstorm areas over the map.';
+    var ml=document.getElementById('mapleg'); if(ml) ml.innerHTML=any?out:'<b>SPC Day '+oDay+':</b> no thunderstorm areas over the map.';
   }).catch(function(){ var ml=document.getElementById('mapleg'); if(ml) ml.innerHTML='Terrain basemap · ESRI. (SPC overlay unavailable.)'; });
   setTimeout(function(){ if(BMAP) BMAP.invalidateSize(); },250);
 }
 
+// SPC categorical outlooks run Day 1–3; pick the one matching the entered departure date.
+function outlookDay(){ try{ var dep=STATE&&STATE.dep; if(!dep) return 1; var d0=new Date(); d0.setHours(0,0,0,0); var dd=new Date(dep); dd.setHours(0,0,0,0); var n=Math.round((dd-d0)/86400000)+1; return Math.min(3,Math.max(1,n)); }catch(e){ return 1; } }
 function dedupeRoute(ids){ var o=ids.slice();
   for(var k=Math.floor(o.length/2); k>=1; k--){ var same=true; for(var j=0;j<k;j++){ if(o[j]!==o[k+j]){same=false;break;} } if(same){ o=o.slice(0,k).concat(o.slice(2*k)); break; } }
   var out=[]; for(var i=0;i<o.length;i++){ if(i===0||o[i]!==o[i-1]) out.push(o[i]); } return out; }
@@ -169,6 +176,14 @@ function render(routeStr){
   h+='<div class="sub">'+(regv?'<b>'+regv+'</b> · ':'')+depTxt+' · cruise <b>'+CR.toLocaleString()+'′</b> (~'+STATE.lv[2]+') · TAS '+TAS+' · '+USABLE+' '+FU+' / '+GPH+' '+FLU+' · '+(pts.length-1)+' legs'+(miss.length?' · <span style="color:#c00">unknown: '+miss.join(', ')+'</span>':'')+'</div>';
   h+='<h2>Route</h2><div id="mapwrap"><div id="bmap"></div><div class="mapleg" id="mapleg"></div></div><div id="narr"></div><div id="ov"></div><h2>Legs</h2><div id="legsec"></div><div id="condsum"></div>';
   h+='<h2>Current conditions &amp; TAF</h2><div id="wx"></div>';
+  h+='<h2>SIGMETs &amp; AIRMETs</h2>';
+  h+='<div id="hzctl" class="mapctl noprint">'
+    +'<label><span class="sw" style="background:#d97706"></span><input type="checkbox" id="hz-TANGO" checked> Turbulence</label>'
+    +'<label><span class="sw" style="background:#2563eb"></span><input type="checkbox" id="hz-ZULU" checked> Icing</label>'
+    +'<label><span class="sw" style="background:#7c3aed"></span><input type="checkbox" id="hz-SIERRA" checked> IFR/Mtn</label>'
+    +'<label><span class="sw" style="background:#c0392b"></span><input type="checkbox" id="hz-SIGMET" checked> SIGMET</label>'
+    +'<span id="hzvalid" class="sub" style="margin-left:auto"></span></div>';
+  h+='<div id="hzmap"></div><div id="hazards" class="sub">loading…</div>';
   h+='<h2>NOTAMs</h2><div id="notams" class="sub">'+(CFG.notamProxy?'loading…':'Live NOTAMs not configured — use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a> or 1800wxbrief.')+'</div>';
   h+='<h2>Winds &amp; temps aloft</h2><div id="wind">loading…</div>';
   h+='<h2>Fuel &amp; services</h2><ul>'+pts.map(function(p){return '<li><b>'+p.id+'</b> — '+p.name+', '+(p.el!=null?p.el.toLocaleString()+"′":'—')+(p.fuel?' · <b style="color:#0b6b3a">'+p.fuel+'</b>':' · <span style="color:#889">fuel n/a</span>')+' · <a class="inline" href="https://www.airnav.com/airport/'+p.id+'" target="_blank">prices/FBO ↗</a></li>';}).join('')+'</ul><div class="sub">Fuel types from FAA data; prices/FBO via AirNav.</div>';
@@ -177,7 +192,7 @@ function render(routeStr){
   h+='<div class="foot">Personal Wings · planning aid — not a substitute for a 1800wxbrief/FSS briefing, TFR/NOTAM check, W&amp;B, and DA/performance planning. METAR: NWS · TAF: metar-taf.com · winds: Open-Meteo · fuel/FBO: AirNav.</div>';
   out.innerHTML=h;
   buildMap(pts, ALLPTS);
-  WINDARR=null; compute(); loadMetars(pts); loadWinds(); loadNotams(pts); loadFood(pts);
+  WINDARR=null; compute(); loadMetars(pts); loadWinds(); loadHazards(); loadNotams(pts); loadFood(pts);
 }
 function smDist(la1,lo1,la2,lo2){ var R=3958.8,p1=la1*Math.PI/180,p2=la2*Math.PI/180,dp=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180;
   var x=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2); return 2*R*Math.asin(Math.sqrt(x)); }
@@ -432,6 +447,56 @@ function metarFB(p,ml,cats,pts){
 }
 function nesc(s){return String(s==null?'':s).replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
 function fmtNz(iso){if(!iso)return'';var d=new Date(iso);if(isNaN(d))return'';return pad(d.getUTCMonth()+1)+'/'+pad(d.getUTCDate())+' '+pad(d.getUTCHours())+pad(d.getUTCMinutes())+'Z';}
+// SIGMET / G-AIRMET areas the route crosses (server does point-in-polygon), drawn on a dedicated
+// hazards map with per-product checkboxes. G-AIRMET is the forecast snapshot nearest departure.
+var HZMAP=null, HZLG=null;
+var HZCOL={SIGMET:'#c0392b',SIERRA:'#7c3aed',TANGO:'#d97706',ZULU:'#2563eb'};
+function hzChk(g){ var c=document.getElementById('hz-'+g); return c?c.checked:true; }
+function hzWire(){ ['SIGMET','SIERRA','TANGO','ZULU'].forEach(function(g){ var c=document.getElementById('hz-'+g); if(!c||c._w) return; c._w=true;
+  c.addEventListener('change',function(){ if(!HZMAP||!HZLG||!HZLG[g]) return; if(c.checked) HZMAP.addLayer(HZLG[g]); else HZMAP.removeLayer(HZLG[g]); }); }); }
+function loadHazards(){
+  var box=document.getElementById('hazards'), mapel=document.getElementById('hzmap'); if(!box||!mapel) return;
+  var S=STATE; if(!S||!S.legs||!S.legs.length){ box.innerHTML='<span class="sub">—</span>'; return; }
+  var poly=[]; S.legs.forEach(function(L){ (L.pts&&L.pts.length?L.pts:[L.mid]).forEach(function(c){ if(c&&c[0]!=null) poly.push([c[0],c[1]]); }); });
+  // densify ~ every 15 sm so a leg can't jump over a hazard polygon between waypoints
+  var dense=[];
+  for(var i=0;i<poly.length-1;i++){ var a=poly[i],b=poly[i+1],steps=Math.max(1,Math.round(smDist(a[0],a[1],b[0],b[1])/15));
+    for(var s=0;s<steps;s++) dense.push([a[0]+(b[0]-a[0])*s/steps, a[1]+(b[1]-a[1])*s/steps]); }
+  if(poly.length) dense.push(poly[poly.length-1]);
+  if(!dense.length){ box.innerHTML='<span class="sub">—</span>'; return; }
+  var path=dense.map(function(c){return c[0].toFixed(3)+','+c[1].toFixed(3);}).join(';');
+  var dep=S.dep?Math.floor(S.dep/1000):0;
+  // (re)build the hazards map
+  if(HZMAP){ try{HZMAP.remove();}catch(e){} HZMAP=null; }
+  HZMAP=L.map('hzmap',{zoomControl:true,attributionControl:false});
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:16,crossOrigin:true}).addTo(HZMAP);
+  L.polyline(poly,{color:'#0b3d91',weight:5,opacity:.5}).addTo(HZMAP);
+  L.polyline(poly,{color:'#4aa3ff',weight:2}).addTo(HZMAP);
+  try{ HZMAP.fitBounds(poly,{padding:[24,24]}); }catch(e){}
+  HZLG={SIGMET:L.layerGroup(),SIERRA:L.layerGroup(),TANGO:L.layerGroup(),ZULU:L.layerGroup()};
+  Object.keys(HZLG).forEach(function(g){ if(hzChk(g)) HZLG[g].addTo(HZMAP); });
+  hzWire();
+  setTimeout(function(){ if(HZMAP) HZMAP.invalidateSize(); },250);
+  box.innerHTML='<span class="sub">loading…</span>';
+  fetch('/.netlify/functions/sigmet?path='+encodeURIComponent(path)+(dep?'&dep='+dep:'')).then(function(r){return r.json();}).then(function(j){
+    var qv=document.getElementById('hzvalid'); if(qv) qv.textContent=(j&&j.gairmetValid)?('G-AIRMET valid '+j.gairmetValid):'';
+    if(j&&j.error){ box.innerHTML='<span class="sub">hazards unavailable ('+nesc(j.error)+')</span>'; return; }
+    var list=(j&&j.hazards)||[];
+    if(!list.length){ box.innerHTML='<span class="sub">No SIGMETs or G-AIRMETs cross the route'+(dep?' near your departure time':'')+'.</span>'; return; }
+    list.forEach(function(z){ var g=HZLG[z.group]; if(!g||!z.coords||z.coords.length<3) return;
+      L.polygon(z.coords,{color:HZCOL[z.group]||'#888',weight:1.5,opacity:.85,fillColor:HZCOL[z.group]||'#888',fillOpacity:.15})
+        .bindTooltip(nesc(z.kind)+' · '+nesc(z.label)+(z.alt?' ('+nesc(z.alt)+')':''),{sticky:true}).addTo(g); });
+    box.className='';
+    box.innerHTML=list.map(function(z){
+      return '<div class="wxrow"><span class="badge" style="background:'+(HZCOL[z.group]||'#8090a0')+'">'+nesc(z.group)+'</span> <b>'+nesc(z.label||'')+'</b>'
+        +(z.sev?' <span style="color:#889">'+nesc(z.sev)+'</span>':'')
+        +(z.alt?' <span style="color:#889">'+nesc(z.alt)+'</span>':'')
+        +(z.valid?' <span style="color:#889">'+nesc(z.valid)+'</span>':'')
+        +(z.text?'<span class="raw">'+nesc(z.text)+'</span>':'')+'</div>';
+    }).join('');
+    setTimeout(function(){ if(HZMAP) HZMAP.invalidateSize(); },200);
+  }).catch(function(){ box.innerHTML='<span class="sub">hazards unavailable</span>'; });
+}
 function loadNotams(pts){
   if(!CFG.notamProxy)return;
   var box=document.getElementById('notams');if(!box)return;
