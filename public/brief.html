@@ -436,21 +436,27 @@ function loadNotams(pts){
   if(!CFG.notamProxy)return;
   var box=document.getElementById('notams');if(!box)return;
   box.className='';box.innerHTML='<div class="sub">⚠ Location NOTAMs only — not a substitute for a full official briefing. Confirm TFRs, FDC &amp; GPS NOTAMs at <a class="inline" href="https://www.1800wxbrief.com" target="_blank">1800wxbrief</a>.</div>';
-  var notCfg=false;
-  pts.forEach(function(p){
-    var blk=document.createElement('div');blk.className='wxrow';blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>';box.appendChild(blk);
-    fetch(CFG.notamProxy+'?id='+encodeURIComponent(p.id)).then(function(r){return r.json();}).then(function(j){
-      if(j.configured===false){ if(!notCfg){notCfg=true;box.innerHTML='<div class="sub">Live NOTAMs not configured yet — add FAA API credentials in Netlify, or use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a>.</div>';} return; }
-      if(j.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable ('+nesc(j.error)+')</span>'; return; }
-      var list=j.notams||[];
-      if(!list.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no current NOTAMs</span>'; return; }
-      var total=j.total||list.length, shown=list.slice(0,20);
-      var html='<b>'+p.id+'</b> <span style="color:#889">'+total+' NOTAM'+(total==1?'':'s')+'</span>';
-      html+=shown.map(function(n){var eff=fmtNz(n.start)+(n.end?'–'+fmtNz(n.end):'');return '<span class="raw">'+(eff?'['+eff+'] ':'')+nesc(n.text)+'</span>';}).join('');
-      if(total>shown.length) html+='<span class="sub">…'+(total-shown.length)+' more — see <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a></span>';
-      blk.innerHTML=html;
-    }).catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable</span>'; });
-  });
+  var notCfg=false, items=[];
+  pts.forEach(function(p){ var blk=document.createElement('div');blk.className='wxrow';blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>';box.appendChild(blk); items.push({p:p,blk:blk}); });
+  function paint(j,p,blk){
+    if(j.configured===false){ if(!notCfg){notCfg=true;box.innerHTML='<div class="sub">Live NOTAMs not configured yet — add a NOTAM key in Netlify, or use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a>.</div>';} return; }
+    if(j.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable ('+nesc(j.error)+(j.detail?' — '+nesc(j.detail):'')+')</span>'; return; }
+    var list=j.notams||[];
+    if(!list.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no current NOTAMs</span>'; return; }
+    var total=j.total||list.length, shown=list.slice(0,20);
+    var html='<b>'+p.id+'</b> <span style="color:#889">'+total+' NOTAM'+(total==1?'':'s')+'</span>';
+    html+=shown.map(function(n){var eff=fmtNz(n.start)+(n.end?'–'+fmtNz(n.end):'');return '<span class="raw">'+(eff?'['+eff+'] ':'')+nesc(n.text)+'</span>';}).join('');
+    if(total>shown.length) html+='<span class="sub">…'+(total-shown.length)+' more — see <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a></span>';
+    blk.innerHTML=html;
+  }
+  // Serialize (one at a time, small gap) so a low free-tier rate limit can't 429 us on parallel airports.
+  var qi=0;
+  function next(){ if(qi>=items.length) return; var it=items[qi++];
+    fetch(CFG.notamProxy+'?id='+encodeURIComponent(it.p.id)).then(function(r){return r.json();}).then(function(j){ paint(j,it.p,it.blk); })
+      .catch(function(){ it.blk.innerHTML='<b>'+it.p.id+'</b> <span style="color:#889">NOTAMs unavailable</span>'; })
+      .then(function(){ setTimeout(next,350); });
+  }
+  next();
 }
 function condSum(cats,pts){var bad=pts.filter(function(p){return cats[p.id]&&cats[p.id]!=='VFR'&&cats[p.id]!=='NA';}).map(function(p){return p.id+' '+cats[p.id];});
   var el=document.getElementById('condsum');if(el)el.innerHTML=bad.length?'<div class="flag">⚠ Below-VFR fields now: <b>'+bad.join(', ')+'</b> — verify TAF trend, keep an approach-equipped alternate.</div>':'';

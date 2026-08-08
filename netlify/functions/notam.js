@@ -1,11 +1,10 @@
 // Personal Wings — NOTAM proxy (Netlify Function). Sources in priority order:
-//   1. SkyLink (RapidAPI, FAA SWIM FNS feed)  — env SKYLINK_KEY   [current, multi-user OK]
+//   1. SkyLink direct API (data.skylinkapi.com, FAA SWIM FNS feed)  — env SKYLINK_KEY (x-api-key)  [current, multi-user OK]
 //   2. autorouter.aero                          — env AUTOROUTER_USER / AUTOROUTER_PASS  [legacy; single-pilot terms]
 //   (FAA NOTAM API can slot in as #1 later when the key arrives — same {notams:[...]} output shape.)
 // Call: /.netlify/functions/notam?id=KDEN
 
-const SKYLINK_URL = "https://skylink-api.p.rapidapi.com/v3/notams/";
-const SKYLINK_HOST = "skylink-api.p.rapidapi.com";
+const SKYLINK_URL = "https://data.skylinkapi.com/v3.1/notams/";   // direct API (skylinkapi.com key via x-api-key)
 const TOKEN_URL = "https://api.autorouter.aero/v1.0/oauth2/token";
 const NOTAM_URL = "https://api.autorouter.aero/v1.0/notam";
 const PERM_SECONDS = 4102444800; // ~year 2100 — autorouter uses 2^32-1 for "permanent"
@@ -44,9 +43,9 @@ exports.handler = async (event) => {
   if (skyKey) {
     try {
       const r = await fetch(SKYLINK_URL + encodeURIComponent(id), {
-        headers: { "x-rapidapi-key": skyKey, "x-rapidapi-host": SKYLINK_HOST, Accept: "application/json" },
+        headers: { "x-api-key": skyKey, Accept: "application/json" },
       });
-      if (!r.ok) return send({ id, error: "skylink " + r.status, notams: [] });
+      if (!r.ok) { const t = await r.text().catch(() => ""); return send({ id, error: "skylink " + r.status, detail: t.slice(0, 200), notams: [] }); }
       let data = {}; try { data = JSON.parse(await r.text()); } catch (e) {}
       const rows = Array.isArray(data.notams) ? data.notams : [];
       const notams = rows.map((n) => ({
