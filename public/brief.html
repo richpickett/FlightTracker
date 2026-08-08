@@ -435,10 +435,11 @@ function fmtNz(iso){if(!iso)return'';var d=new Date(iso);if(isNaN(d))return'';re
 function loadNotams(pts){
   if(!CFG.notamProxy)return;
   var box=document.getElementById('notams');if(!box)return;
-  box.className='';box.innerHTML='<div class="sub">⚠ Location NOTAMs only — not a substitute for a full official briefing. Confirm TFRs, FDC &amp; GPS NOTAMs at <a class="inline" href="https://www.1800wxbrief.com" target="_blank">1800wxbrief</a>.</div>';
+  box.className='';box.innerHTML='<div class="sub">⚠ Location NOTAMs only — not a substitute for a full official briefing. Confirm TFRs, FDC &amp; GPS NOTAMs at <a class="inline" href="https://www.1800wxbrief.com" target="_blank">1800wxbrief</a>.<span id="nquota"></span></div>';
   var notCfg=false, items=[];
   pts.forEach(function(p){ var blk=document.createElement('div');blk.className='wxrow';blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>';box.appendChild(blk); items.push({p:p,blk:blk}); });
   function paint(j,p,blk){
+    if(j.quota&&j.quota.limit!=null){ var qe=document.getElementById('nquota'); if(qe) qe.innerHTML=' · <b style="color:#0b6b3a">SkyLink '+(j.quota.remaining!=null?j.quota.remaining.toLocaleString():'?')+'/'+j.quota.limit.toLocaleString()+' left this period</b>'; }
     if(j.configured===false){ if(!notCfg){notCfg=true;box.innerHTML='<div class="sub">Live NOTAMs not configured yet — add a NOTAM key in Netlify, or use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a>.</div>';} return; }
     if(j.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable ('+nesc(j.error)+(j.detail?' — '+nesc(j.detail):'')+')</span>'; return; }
     var list=j.notams||[];

@@ -1,10 +1,11 @@
 // Personal Wings — NOTAM proxy (Netlify Function). Sources in priority order:
-//   1. SkyLink direct API (data.skylinkapi.com, FAA SWIM FNS feed)  — env SKYLINK_KEY (x-api-key)  [current, multi-user OK]
+//   1. SkyLink via RapidAPI gateway (FAA SWIM FNS feed)  — env SKYLINK_KEY (x-rapidapi-key)  [current, multi-user OK]
 //   2. autorouter.aero                          — env AUTOROUTER_USER / AUTOROUTER_PASS  [legacy; single-pilot terms]
 //   (FAA NOTAM API can slot in as #1 later when the key arrives — same {notams:[...]} output shape.)
 // Call: /.netlify/functions/notam?id=KDEN
 
-const SKYLINK_URL = "https://data.skylinkapi.com/v3.1/notams/";   // direct API (skylinkapi.com key via x-api-key)
+const SKYLINK_URL = "https://skylink-api.p.rapidapi.com/notams/";   // RapidAPI gateway — no version prefix in the path
+const SKYLINK_HOST = "skylink-api.p.rapidapi.com";
 const TOKEN_URL = "https://api.autorouter.aero/v1.0/oauth2/token";
 const NOTAM_URL = "https://api.autorouter.aero/v1.0/notam";
 const PERM_SECONDS = 4102444800; // ~year 2100 — autorouter uses 2^32-1 for "permanent"
@@ -43,9 +44,12 @@ exports.handler = async (event) => {
   if (skyKey) {
     try {
       const r = await fetch(SKYLINK_URL + encodeURIComponent(id), {
-        headers: { "x-api-key": skyKey, Accept: "application/json" },
+        headers: { "x-rapidapi-key": skyKey, "x-rapidapi-host": SKYLINK_HOST, Accept: "application/json" },
       });
-      if (!r.ok) { const t = await r.text().catch(() => ""); return send({ id, error: "skylink " + r.status, detail: t.slice(0, 200), notams: [] }); }
+      // RapidAPI reports remaining monthly quota in response headers — surface it as a live counter.
+      const rem = r.headers.get("x-ratelimit-requests-remaining"), lim = r.headers.get("x-ratelimit-requests-limit");
+      const quota = (rem != null || lim != null) ? { remaining: rem != null ? Number(rem) : null, limit: lim != null ? Number(lim) : null } : null;
+      if (!r.ok) { const t = await r.text().catch(() => ""); return send({ id, error: "skylink " + r.status, detail: t.slice(0, 200), quota, notams: [] }); }
       let data = {}; try { data = JSON.parse(await r.text()); } catch (e) {}
       const rows = Array.isArray(data.notams) ? data.notams : [];
       const notams = rows.map((n) => ({
@@ -55,7 +59,7 @@ exports.handler = async (event) => {
         end: n.expiration || n.end || "",
         text: String(n.body || n.raw || "").trim(),
       })).filter((x) => x.text);
-      return send({ id, configured: true, source: "skylink", total: data.total_count != null ? data.total_count : notams.length, notams });
+      return send({ id, configured: true, source: "skylink", quota, total: data.total_count != null ? data.total_count : notams.length, notams });
     } catch (e) {
       return send({ id, error: "skylink " + String(e.message || e), notams: [] });
     }
