@@ -19,7 +19,8 @@ exports.handler = async (event) => {
     const bbox = [lat - dLat, lon - dLon, lat + dLat, lon + dLon].map(n => n.toFixed(4)).join(","); // minLat,minLon,maxLat,maxLon
     try {
       const r = await fetch("https://aviationweather.gov/api/data/taf?bbox=" + bbox + "&format=json");
-      let arr = []; try { arr = JSON.parse((await r.text()) || "[]"); } catch (e) {}
+      if (!r.ok) return J(200, { found: false, error: true });   // rate-limited / down → client can fall back to metar-taf.com
+      let arr = []; try { arr = JSON.parse((await r.text()) || "[]"); } catch (e) { return J(200, { found: false, error: true }); }
       let best = null;
       (Array.isArray(arr) ? arr : []).forEach(t => {
         const tl = t.lat, tn = t.lon, raw = t.rawTAF || t.rawTaf || t.raw;
@@ -28,9 +29,9 @@ exports.handler = async (event) => {
         if (dist > radius) return;
         if (!best || dist < best.d) best = { id: t.icaoId || t.stationId || "", raw: String(raw).trim(), d: dist };
       });
-      if (!best) return J(200, { found: false });
+      if (!best) return J(200, { found: false });   // genuinely no TAF within radius (not an error)
       return J(200, { found: true, id: best.id, raw: best.raw, distNm: Math.round(best.d) });
-    } catch (e) { return J(200, { found: false }); }
+    } catch (e) { return J(200, { found: false, error: true }); }
   }
 
   // ---- By-station mode (metar-taf.com) ----

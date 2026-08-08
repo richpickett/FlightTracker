@@ -395,10 +395,28 @@ function loadTaf(p,tl){
     }).catch(near);
   } else { near(); }
 }
+function tafNearLabel(id,dist,self){ return '<span style="color:#889">nearest TAF · '+nesc(id)+' '+dist+' nm (no TAF at '+nesc(self)+')</span><br>'; }
 function tafNear(p,tl){
   fetch('/.netlify/functions/taf?lat='+p.la+'&lon='+p.lo+'&radius=25').then(function(r){return r.json();}).then(function(j){
-    if(j&&j.found&&j.raw){ tl.innerHTML='<span style="color:#889">nearest TAF · '+nesc(j.id)+' '+j.distNm+' nm (no TAF at '+nesc(p.id)+')</span><br>'+nesc(j.raw); }
-  }).catch(function(){});
+    if(j&&j.found&&j.raw){ tl.innerHTML=tafNearLabel(j.id,j.distNm,p.id)+nesc(j.raw); }
+    else if(j&&j.error){ tafNearById(p,tl); }   // aviationweather.gov unavailable → fall back to metar-taf.com by nearby station
+  }).catch(function(){ tafNearById(p,tl); });
+}
+// Fallback: sweep the nearest ICAO fields within 25 nm through metar-taf.com until one returns a TAF.
+function tafNearById(p,tl){
+  if(!CFG.tafProxy||!DB.airports||p.la==null) return;
+  var seen={}, cands=[];
+  for(var id in DB.airports){ if(seen[id])continue; seen[id]=1; if(id===p.id)continue;
+    if(!/^K[A-Z]{3}$/.test(id)) continue;   // K + 3 letters → CONUS ICAO; skips the 3-char duplicate keys
+    var a=DB.airports[id]; if(!a||a[0]==null||a[1]==null) continue;
+    var d=smDist(p.la,p.lo,a[0],a[1]); if(d<=25) cands.push({id:id,d:d}); }
+  cands.sort(function(x,y){return x.d-y.d;}); cands=cands.slice(0,6);
+  var sep=(CFG.tafProxy.indexOf('?')<0?'?':'&');
+  (function tryNext(i){ if(i>=cands.length) return; var c=cands[i];
+    fetch(CFG.tafProxy+sep+'id='+encodeURIComponent(c.id)).then(function(r){return r.json();}).then(function(t){
+      var raw=t&&t.taf&&t.taf.raw; if(raw){ tl.innerHTML=tafNearLabel(c.id,Math.round(c.d),p.id)+nesc(raw); } else tryNext(i+1);
+    }).catch(function(){ tryNext(i+1); });
+  })(0);
 }
 // aviationweather.gov fallback — carries many GA fields the NWS observations API returns empty.
 function metarFB(p,ml,cats,pts){
