@@ -145,7 +145,14 @@ function buildMap(pts, allpts){
 }
 
 // SPC categorical outlooks run Day 1–3; pick the one matching the entered departure date.
-function outlookDay(){ try{ var dep=STATE&&STATE.dep; if(!dep) return 1; var d0=new Date(); d0.setHours(0,0,0,0); var dd=new Date(dep); dd.setHours(0,0,0,0); var n=Math.round((dd-d0)/86400000)+1; return Math.min(3,Math.max(1,n)); }catch(e){ return 1; } }
+function outlookDay(){ try{ var dv=(document.getElementById('depdate')||{}).value||''; if(!dv) return 1;
+  var p=dv.split('-'); var dd=new Date(+p[0],+p[1]-1,+p[2]); dd.setHours(0,0,0,0); if(isNaN(dd)) return 1;
+  var d0=new Date(); d0.setHours(0,0,0,0);
+  var n=Math.round((dd-d0)/86400000)+1; return Math.min(3,Math.max(1,n)); }catch(e){ return 1; } }
+// departure timestamp for wx correlation — honors the date even when the time field is blank (noon local)
+function depWxMs(){ try{ if(STATE&&STATE.dep && (document.getElementById('dep').value||'').replace(/[^0-9]/g,'').length>=3) return STATE.dep;
+  var dv=(document.getElementById('depdate')||{}).value||''; if(!dv) return (STATE&&STATE.dep)||Date.now();
+  var p=dv.split('-'); return new Date(+p[0],+p[1]-1,+p[2],12,0,0).getTime(); }catch(e){ return (STATE&&STATE.dep)||Date.now(); } }
 function dedupeRoute(ids){ var o=ids.slice();
   for(var k=Math.floor(o.length/2); k>=1; k--){ var same=true; for(var j=0;j<k;j++){ if(o[j]!==o[k+j]){same=false;break;} } if(same){ o=o.slice(0,k).concat(o.slice(2*k)); break; } }
   var out=[]; for(var i=0;i<o.length;i++){ if(i===0||o[i]!==o[i-1]) out.push(o[i]); } return out; }
@@ -458,44 +465,43 @@ function loadHazards(){
   var box=document.getElementById('hazards'), mapel=document.getElementById('hzmap'); if(!box||!mapel) return;
   var S=STATE; if(!S||!S.legs||!S.legs.length){ box.innerHTML='<span class="sub">—</span>'; return; }
   var poly=[]; S.legs.forEach(function(L){ (L.pts&&L.pts.length?L.pts:[L.mid]).forEach(function(c){ if(c&&c[0]!=null) poly.push([c[0],c[1]]); }); });
-  // densify ~ every 15 sm so a leg can't jump over a hazard polygon between waypoints
+  // densify ~ every 15 sm so the server's point-in-polygon flags every hazard the route actually crosses
   var dense=[];
   for(var i=0;i<poly.length-1;i++){ var a=poly[i],b=poly[i+1],steps=Math.max(1,Math.round(smDist(a[0],a[1],b[0],b[1])/15));
     for(var s=0;s<steps;s++) dense.push([a[0]+(b[0]-a[0])*s/steps, a[1]+(b[1]-a[1])*s/steps]); }
   if(poly.length) dense.push(poly[poly.length-1]);
-  if(!dense.length){ box.innerHTML='<span class="sub">—</span>'; return; }
   var path=dense.map(function(c){return c[0].toFixed(3)+','+c[1].toFixed(3);}).join(';');
-  var dep=S.dep?Math.floor(S.dep/1000):0;
+  var CONUS=[[23.5,-125.5],[49.5,-66.5]];   // default view = entire US; user can zoom in
+  var dep=Math.floor(depWxMs()/1000);
   // (re)build the hazards map
   if(HZMAP){ try{HZMAP.remove();}catch(e){} HZMAP=null; }
   HZMAP=L.map('hzmap',{zoomControl:true,attributionControl:false});
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:16,crossOrigin:true}).addTo(HZMAP);
-  L.polyline(poly,{color:'#0b3d91',weight:5,opacity:.5}).addTo(HZMAP);
-  L.polyline(poly,{color:'#4aa3ff',weight:2}).addTo(HZMAP);
-  try{ HZMAP.fitBounds(poly,{padding:[24,24]}); }catch(e){}
+  if(poly.length){ L.polyline(poly,{color:'#0b3d91',weight:5,opacity:.5}).addTo(HZMAP); L.polyline(poly,{color:'#4aa3ff',weight:2}).addTo(HZMAP); }
+  try{ HZMAP.fitBounds(CONUS); }catch(e){}
   HZLG={SIGMET:L.layerGroup(),SIERRA:L.layerGroup(),TANGO:L.layerGroup(),ZULU:L.layerGroup()};
   Object.keys(HZLG).forEach(function(g){ if(hzChk(g)) HZLG[g].addTo(HZMAP); });
   hzWire();
   setTimeout(function(){ if(HZMAP) HZMAP.invalidateSize(); },250);
   box.innerHTML='<span class="sub">loading…</span>';
-  fetch('/.netlify/functions/sigmet?path='+encodeURIComponent(path)+(dep?'&dep='+dep:'')).then(function(r){return r.json();}).then(function(j){
+  fetch('/.netlify/functions/sigmet?all=1&path='+encodeURIComponent(path)+(dep?'&dep='+dep:'')).then(function(r){return r.json();}).then(function(j){
     var qv=document.getElementById('hzvalid'); if(qv) qv.textContent=(j&&j.gairmetValid)?('G-AIRMET valid '+j.gairmetValid):'';
     if(j&&j.error){ box.innerHTML='<span class="sub">hazards unavailable ('+nesc(j.error)+')</span>'; return; }
     var list=(j&&j.hazards)||[];
-    if(!list.length){ box.innerHTML='<span class="sub">No SIGMETs or G-AIRMETs cross the route'+(dep?' near your departure time':'')+'.</span>'; return; }
-    var hb=L.latLngBounds(poly);   // grow to include every hazard area so the full bands show, not just the route
+    if(!list.length){ box.innerHTML='<span class="sub">No active SIGMETs or G-AIRMETs'+(dep?' near your departure time':'')+'.</span>'; return; }
+    // route-crossing areas draw bold; the rest of the US dims for context
     list.forEach(function(z){ var g=HZLG[z.group]; if(!g||!z.coords||z.coords.length<3) return;
-      z.coords.forEach(function(c){ hb.extend(c); });
-      L.polygon(z.coords,{color:HZCOL[z.group]||'#888',weight:1.5,opacity:.85,fillColor:HZCOL[z.group]||'#888',fillOpacity:.15})
-        .bindTooltip(nesc(z.kind)+' · '+nesc(z.label)+(z.alt?' ('+nesc(z.alt)+')':''),{sticky:true}).addTo(g); });
-    try{ if(hb.isValid()) HZMAP.fitBounds(hb,{padding:[30,30],maxZoom:9}); }catch(e){}
+      var st=z.onRoute?{color:HZCOL[z.group]||'#888',weight:3,opacity:1,fillColor:HZCOL[z.group]||'#888',fillOpacity:.28}
+                      :{color:HZCOL[z.group]||'#888',weight:1,opacity:.4,fillColor:HZCOL[z.group]||'#888',fillOpacity:.05,dashArray:'3,3'};
+      var pg=L.polygon(z.coords,st).bindTooltip((z.onRoute?'⚑ ':'')+nesc(z.kind)+' · '+nesc(z.label)+(z.alt?' ('+nesc(z.alt)+')':''),{sticky:true}).addTo(g);
+      if(z.onRoute) pg.bringToFront(); });
     box.className='';
     box.innerHTML=list.map(function(z){
-      return '<div class="wxrow"><span class="badge" style="background:'+(HZCOL[z.group]||'#8090a0')+'">'+nesc(z.group)+'</span> <b>'+nesc(z.label||'')+'</b>'
+      return '<div class="wxrow"'+(z.onRoute?' style="background:#fbfdff"':'')+'><span class="badge" style="background:'+(HZCOL[z.group]||'#8090a0')+(z.onRoute?'':';opacity:.55')+'">'+nesc(z.group)+'</span> '+(z.onRoute?'<b>⚑ ':'<span style="color:#889">')+nesc(z.label||'')+(z.onRoute?'</b>':'</span>')
         +(z.sev?' <span style="color:#889">'+nesc(z.sev)+'</span>':'')
         +(z.alt?' <span style="color:#889">'+nesc(z.alt)+'</span>':'')
         +(z.valid?' <span style="color:#889">'+nesc(z.valid)+'</span>':'')
-        +(z.text?'<span class="raw">'+nesc(z.text)+'</span>':'')+'</div>';
+        +(z.onRoute&&z.text?'<span class="raw">'+nesc(z.text)+'</span>':'')+'</div>';
     }).join('');
     setTimeout(function(){ if(HZMAP) HZMAP.invalidateSize(); },200);
   }).catch(function(){ box.innerHTML='<span class="sub">hazards unavailable</span>'; });
