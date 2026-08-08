@@ -228,11 +228,12 @@ function loadFood(pts){
   function streetOf(a){ if(!a) return ''; var s=String(a).split(',')[0].replace(/^\s*\d+[-\s]*/,'').replace(/\b(ste|suite|unit|#).*$/i,''); return s.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
   // On-field = place name says airport/airfield, OR the place shares the airport's street (number ignored).
   // No distance rule: big fields put on-field spots >1 sm from the ARP, and near-ARP off-field spots false-tagged.
-  function isOnField(e,aptStreet){ if(/\bair(port|field)\b/i.test(e.name||'')) return true; var s=streetOf(e.addr); return !!(aptStreet && s && s===aptStreet); }
+  function isOnField(e,aptStreet,d){ if(d!=null && d<=0.15) return true;   // within ~0.15 sm ≈ on the field (terminal spots, even with a different street address)
+    if(/\bair(port|field)\b/i.test(e.name||'')) return true; var s=streetOf(e.addr); return !!(aptStreet && s && s===aptStreet); }
   function renderField(p,data){
     var blk=rows[p.id]; if(!blk) return;
     var places=(data&&data.places)||[], aptStreet=(data&&data.aptStreet)||'';
-    var near=places.map(function(e){var d=smDist(p.la,p.lo,e.lat,e.lon);return {e:e,d:d,of:isOnField(e,aptStreet)};}).filter(function(x){return x.d<=2.05;});
+    var near=places.map(function(e){var d=smDist(p.la,p.lo,e.lat,e.lon);return {e:e,d:d,of:isOnField(e,aptStreet,d)};}).filter(function(x){return x.d<=2.05;});
     near.sort(function(a,b){ if(a.of!==b.of) return a.of?-1:1; return a.d-b.d; }); var top=near.slice(0,8);
     if(!top.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no food found — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; return; }
     blk.innerHTML='<b>'+p.id+'</b> '+top.map(function(x){ var e=x.e;
