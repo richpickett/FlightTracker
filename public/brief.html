@@ -483,9 +483,12 @@ function loadHazards(){
     if(j&&j.error){ box.innerHTML='<span class="sub">hazards unavailable ('+nesc(j.error)+')</span>'; return; }
     var list=(j&&j.hazards)||[];
     if(!list.length){ box.innerHTML='<span class="sub">No SIGMETs or G-AIRMETs cross the route'+(dep?' near your departure time':'')+'.</span>'; return; }
+    var hb=L.latLngBounds(poly);   // grow to include every hazard area so the full bands show, not just the route
     list.forEach(function(z){ var g=HZLG[z.group]; if(!g||!z.coords||z.coords.length<3) return;
+      z.coords.forEach(function(c){ hb.extend(c); });
       L.polygon(z.coords,{color:HZCOL[z.group]||'#888',weight:1.5,opacity:.85,fillColor:HZCOL[z.group]||'#888',fillOpacity:.15})
         .bindTooltip(nesc(z.kind)+' · '+nesc(z.label)+(z.alt?' ('+nesc(z.alt)+')':''),{sticky:true}).addTo(g); });
+    try{ if(hb.isValid()) HZMAP.fitBounds(hb,{padding:[30,30],maxZoom:9}); }catch(e){}
     box.className='';
     box.innerHTML=list.map(function(z){
       return '<div class="wxrow"><span class="badge" style="background:'+(HZCOL[z.group]||'#8090a0')+'">'+nesc(z.group)+'</span> <b>'+nesc(z.label||'')+'</b>'
