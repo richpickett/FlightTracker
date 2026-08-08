@@ -79,10 +79,12 @@ function depEpoch(){
 function getRoute(){var u=new URLSearchParams(location.search).get('route');if(u)return u;try{var s=localStorage.getItem('pw_route');if(s)return s;}catch(e){}return 'KSAN BRDR7 JLI KPSP';}
 function saveAC(){if(window.PW_SHARED)return;try{var o={};['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(k){o[k]=document.getElementById(k).value;});localStorage.setItem('pw_ac',JSON.stringify(o));localStorage.setItem('pw_reg',(document.getElementById('reg')||{}).value||'');
   // if this tail is already a saved aircraft, keep its stored profile in sync with the form edits
-  var reg=(o.reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(reg){var f=fleetGet(); if(f.list[reg]){var ac={};AC_FIELDS.forEach(function(k){ac[k]=o[k]||'';});ac.reg=reg;f.list[reg]=ac;fleetPut(f);}}
+  var reg=(o.reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(reg){var f=fleetGet(); if(f.list[reg]){var ac={};AC_FIELDS.forEach(function(k){ac[k]=o[k]||'';});ac.reg=reg;f.list[reg]=ac;fleetPut(f); if(!PW_applyingFleet&&window.PW_saveFleet) window.PW_saveFleet(f);}}
 }catch(e){}}
 // ---- saved aircraft ("fleet"): multiple profiles keyed by tail, one marked default ----
+// Stored in localStorage; when signed in, pwauth.js mirrors it to the account (profiles.fleet) so it syncs across devices.
 var AC_FIELDS=['reg','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'];   // persisted per aircraft (not date/dep time)
+var PW_applyingFleet=false;   // guard so applying a cloud fleet doesn't push it straight back up
 function fleetGet(){ try{var f=JSON.parse(localStorage.getItem('pw_fleet')||'null'); if(f&&f.list) return f;}catch(e){}
   try{var a=JSON.parse(localStorage.getItem('pw_ac')||'null'); if(a&&a.reg){var reg=(a.reg||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(reg){var o={};AC_FIELDS.forEach(function(k){o[k]=a[k]||'';});o.reg=reg;var f2={list:{},def:reg};f2.list[reg]=o;return f2;}}}catch(e){}   // migrate legacy single profile
   return {list:{},def:''}; }
@@ -91,9 +93,10 @@ function acRead(){ var o={}; AC_FIELDS.forEach(function(k){o[k]=(document.getEle
 function acApply(o){ AC_FIELDS.forEach(function(k){var e=document.getElementById(k); if(e&&o[k]!=null) e.value=o[k];}); }
 function fleetPopulate(cur){ var f=fleetGet(), s=document.getElementById('acsel'); if(!s) return; cur=(cur||(document.getElementById('reg')||{}).value||f.def||'').toUpperCase(); var regs=Object.keys(f.list).sort();
   s.innerHTML='<option value="">— saved a/c —</option>'+regs.map(function(r){return '<option value="'+r+'"'+(r===cur?' selected':'')+'>'+r+(r===f.def?' ★':'')+'</option>';}).join(''); }
-function fleetSaveCurrent(){ var o=acRead(); if(!o.reg){var re=document.getElementById('reg'); if(re) re.focus(); return;} var f=fleetGet(); f.list[o.reg]=o; if(!f.def) f.def=o.reg; fleetPut(f); fleetPopulate(o.reg); }
-function fleetSetDefault(){ var o=acRead(); if(!o.reg) return; var f=fleetGet(); if(!f.list[o.reg]) f.list[o.reg]=o; f.def=o.reg; fleetPut(f); fleetPopulate(o.reg); }
-function fleetDeleteSel(){ var s=document.getElementById('acsel'); var reg=(s&&s.value)||''; if(!reg) return; var f=fleetGet(); delete f.list[reg]; if(f.def===reg) f.def=Object.keys(f.list)[0]||''; fleetPut(f); fleetPopulate(); }
+function fleetSync(f){ if(window.PW_saveFleet) window.PW_saveFleet(f); }   // push to account when signed in (no-op otherwise)
+function fleetSaveCurrent(){ var o=acRead(); if(!o.reg){var re=document.getElementById('reg'); if(re) re.focus(); return;} var f=fleetGet(); f.list[o.reg]=o; if(!f.def) f.def=o.reg; fleetPut(f); fleetSync(f); fleetPopulate(o.reg); }
+function fleetSetDefault(){ var o=acRead(); if(!o.reg) return; var f=fleetGet(); if(!f.list[o.reg]) f.list[o.reg]=o; f.def=o.reg; fleetPut(f); fleetSync(f); fleetPopulate(o.reg); }
+function fleetDeleteSel(){ var s=document.getElementById('acsel'); var reg=(s&&s.value)||''; if(!reg) return; var f=fleetGet(); delete f.list[reg]; if(f.def===reg) f.def=Object.keys(f.list)[0]||''; fleetPut(f); fleetSync(f); fleetPopulate(); }
 function fleetSelect(reg){ if(!reg) return; var f=fleetGet(), o=f.list[reg]; if(o){ acApply(o); saveAC(); fleetPopulate(reg); render((document.getElementById('rin')||{}).value||''); } }
 function loadAC(){try{var a=JSON.parse(localStorage.getItem('pw_ac')||'{}');['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(k){if(a[k]!=null&&a[k]!=='')document.getElementById(k).value=a[k];});var rr=localStorage.getItem('pw_reg');if(rr){var re=document.getElementById('reg');if(re)re.value=rr.toUpperCase();}}catch(e){}}
 function setRoute(str){if(window.PW_SHARED)return;var rg=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');try{localStorage.setItem('pw_route',str);if(rg)localStorage.setItem('pw_reg',rg);}catch(e){}history.replaceState(null,'',location.pathname+'?route='+encodeURIComponent(str)+(rg?'&reg='+encodeURIComponent(rg):''));}
@@ -430,6 +433,9 @@ document.getElementById('tomap').addEventListener('click',function(){var rt=((do
 <script>
 window.PW_getState=function(){var g=function(id){return (document.getElementById(id)||{}).value;};return {route:g('rin')||'',aircraft:{reg:g('reg'),depdate:g('depdate'),dep:g('dep'),deptz:g('deptz'),cruise:g('cruise'),tas:g('tas'),usable:g('usable'),gph:g('gph'),rsv:g('rsv'),amax:g('amax'),amin:g('amin')}};};
 window.PW_applyState=function(s){var st=function(id,v){var e=document.getElementById(id); if(e&&v!=null&&v!=='')e.value=v;}; if(s.aircraft){st('reg',s.aircraft.reg);st('depdate',s.aircraft.depdate);st('dep',s.aircraft.dep);st('deptz',s.aircraft.deptz);st('cruise',s.aircraft.cruise);st('tas',s.aircraft.tas);st('usable',s.aircraft.usable);st('gph',s.aircraft.gph);st('rsv',s.aircraft.rsv);st('amax',s.aircraft.amax);st('amin',s.aircraft.amin);} if(s.route){st('rin',s.route); if(typeof render==='function') render(s.route);} };
+// account sync hooks (used by pwauth.js): read the local fleet, or apply a fleet pulled from the account
+window.PW_getFleet=function(){ return fleetGet(); };
+window.PW_applyFleet=function(f){ if(!f||!f.list) return; PW_applyingFleet=true; try{ fleetPut(f); var o=(f.def&&f.list[f.def])?f.list[f.def]:null; if(o) acApply(o); saveAC(); fleetPopulate(f.def); if(typeof render==='function') render((document.getElementById('rin')||{}).value||''); } finally { PW_applyingFleet=false; } };
 </script>
 <script src="/pwauth.js"></script>
 </body></html>

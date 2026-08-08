@@ -86,12 +86,23 @@
       msg('✓ Password-reset link sent to '+e+'. Check your inbox.');});}
   function signOut(){ RECOVERY=false; PROFILE={}; SB.auth.signOut(); }
   function fetchProfile(){ if(!USER) return;
-    SB.from('profiles').select('default_reg').eq('id',USER.id).single().then(function(r){
+    SB.from('profiles').select('*').eq('id',USER.id).single().then(function(r){
       PROFILE=r.data||{};
       var rr=$('#pw-reg'); if(rr) rr.value=PROFILE.default_reg||'';
-      if(PROFILE.default_reg && window.PW_setReg) window.PW_setReg(PROFILE.default_reg); // apply unless user chose a tail via link/field
+      // aircraft fleet sync: server wins if it holds aircraft; otherwise push up any local fleet (first-device upload)
+      var sf=PROFILE.fleet;
+      if(sf && sf.list && Object.keys(sf.list).length){
+        if(window.PW_applyFleet) window.PW_applyFleet(sf);
+        else if(PROFILE.default_reg && window.PW_setReg) window.PW_setReg(PROFILE.default_reg);
+      } else {
+        if(window.PW_getFleet){ var lf=window.PW_getFleet(); if(lf && lf.list && Object.keys(lf.list).length) pushFleet(lf); }
+        if(PROFILE.default_reg && window.PW_setReg) window.PW_setReg(PROFILE.default_reg); // apply unless user chose a tail via link/field
+      }
     }).catch(function(){});
   }
+  // Save the aircraft fleet to the signed-in user's profile (no-op when signed out). Called by the page on any fleet change.
+  function pushFleet(f){ if(!USER||!f) return; SB.from('profiles').update({fleet:f, default_reg:(f.def||'')}).eq('id',USER.id).then(function(){}).catch(function(){}); }
+  window.PW_saveFleet=function(f){ try{ pushFleet(f); }catch(e){} };
   function saveDefaultReg(){ if(!USER) return;
     var v=($('#pw-reg').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
     SB.from('profiles').update({default_reg:v}).eq('id',USER.id).then(function(r){
