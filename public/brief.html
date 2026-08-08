@@ -383,8 +383,22 @@ function loadMetars(pts){
         var fc=cat(vs,ce);cats[p.id]=fc;condSum(cats,pts);
         ml.innerHTML='<span class="badge" style="background:'+CC[fc]+'">'+fc+'</span> <b>'+p.id+'</b> <span style="color:#889">'+fmtAge(q.timestamp)+'</span><span class="raw">'+q.rawMessage+'</span>';
       }).catch(function(){ metarFB(p,ml,cats,pts); });
-    if(CFG.tafProxy){fetch(CFG.tafProxy+(CFG.tafProxy.indexOf('?')<0?'?':'&')+'id='+encodeURIComponent(p.id)).then(function(r){return r.json();}).then(function(t){var raw=t&&t.taf&&t.taf.raw;if(raw)tl.textContent=raw;}).catch(function(){});}
+    loadTaf(p,tl);
   });
+}
+// TAF for a field; if it issues none (e.g. KMYF, KCMA), fall back to the nearest TAF within 25 nm.
+function loadTaf(p,tl){
+  var near=function(){ if(p.la!=null&&p.lo!=null) tafNear(p,tl); };
+  if(CFG.tafProxy){
+    fetch(CFG.tafProxy+(CFG.tafProxy.indexOf('?')<0?'?':'&')+'id='+encodeURIComponent(p.id)).then(function(r){return r.json();}).then(function(t){
+      var raw=t&&t.taf&&t.taf.raw; if(raw){ tl.textContent=raw; } else { near(); }
+    }).catch(near);
+  } else { near(); }
+}
+function tafNear(p,tl){
+  fetch('/.netlify/functions/taf?lat='+p.la+'&lon='+p.lo+'&radius=25').then(function(r){return r.json();}).then(function(j){
+    if(j&&j.found&&j.raw){ tl.innerHTML='<span style="color:#889">nearest TAF · '+nesc(j.id)+' '+j.distNm+' nm (no TAF at '+nesc(p.id)+')</span><br>'+nesc(j.raw); }
+  }).catch(function(){});
 }
 // aviationweather.gov fallback — carries many GA fields the NWS observations API returns empty.
 function metarFB(p,ml,cats,pts){
