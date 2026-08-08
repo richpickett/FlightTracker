@@ -38,7 +38,7 @@
     <span class="ac">tail<input id="reg" type="text" placeholder="N123AB" style="width:84px;text-transform:uppercase"></span>
     <span class="ac">date<input id="depdate" type="date" style="width:132px"></span>
     <span class="ac">dep<input id="dep" type="text" placeholder="HHMM"><select id="deptz"><option value="L">Lcl</option><option value="Z">UTC</option></select>
-      cruise ft<input id="cruise" type="number" value="10000"> TAS<input id="tas" type="number" value="145"> usable<input id="usable" type="number" value="87"><select id="funit" title="fuel quantity units"><option value="gal">gal</option><option value="lbs">lbs</option></select> flow<input id="gph" type="number" value="18" title="Fuel flow per hour — match the 'usable' units"><select id="flowunit" title="fuel flow units"><option value="gph">gph</option><option value="pph">pph</option></select> reserve<input id="rsv" type="number" value="45" title="reserve fuel you want on board, in the selected units"></span>
+      cruise ft<input id="cruise" type="number" value="10000"> TAS<input id="tas" type="number" value="145"> usable<input id="usable" type="number" value="87"><select id="funit" title="fuel quantity units"><option value="gal">gal</option><option value="lbs">lbs</option></select> flow<input id="gph" type="number" value="18" title="Fuel flow per hour — match the 'usable' units"><select id="flowunit" title="fuel flow units"><option value="gph">gph</option><option value="pph">pph</option></select> reserve<input id="rsv" type="number" value="45" title="reserve fuel you want on board, in the selected units"> max alt<input id="amax" type="number" value="15000" title="Highest usable cruise altitude (service ceiling). The wind optimizer will not recommend above this — e.g. C206 ≈ 15000, turbine ≈ 45000."> min alt<input id="amin" type="number" placeholder="none" title="Lowest cruise altitude the optimizer may recommend (blank = no floor); use for terrain/MEA."></span>
     <button id="go">Update</button><button id="print" class="sec">Print</button><button id="tomap" class="sec" title="Open this route on the live enroute map">🗺 Live map</button><a id="pw-acct-slot" style="cursor:pointer">👤 Sign in</a>
   </div>
   <div id="out"><p class="sub">Loading airport database…</p></div>
@@ -77,10 +77,10 @@ function depEpoch(){
   return ep;
 }
 function getRoute(){var u=new URLSearchParams(location.search).get('route');if(u)return u;try{var s=localStorage.getItem('pw_route');if(s)return s;}catch(e){}return 'KSAN BRDR7 JLI KPSP';}
-function saveAC(){if(window.PW_SHARED)return;try{var o={};['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit'].forEach(function(k){o[k]=document.getElementById(k).value;});localStorage.setItem('pw_ac',JSON.stringify(o));localStorage.setItem('pw_reg',(document.getElementById('reg')||{}).value||'');}catch(e){}}
-function loadAC(){try{var a=JSON.parse(localStorage.getItem('pw_ac')||'{}');['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit'].forEach(function(k){if(a[k]!=null&&a[k]!=='')document.getElementById(k).value=a[k];});var rr=localStorage.getItem('pw_reg');if(rr){var re=document.getElementById('reg');if(re)re.value=rr.toUpperCase();}}catch(e){}}
+function saveAC(){if(window.PW_SHARED)return;try{var o={};['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(k){o[k]=document.getElementById(k).value;});localStorage.setItem('pw_ac',JSON.stringify(o));localStorage.setItem('pw_reg',(document.getElementById('reg')||{}).value||'');}catch(e){}}
+function loadAC(){try{var a=JSON.parse(localStorage.getItem('pw_ac')||'{}');['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(k){if(a[k]!=null&&a[k]!=='')document.getElementById(k).value=a[k];});var rr=localStorage.getItem('pw_reg');if(rr){var re=document.getElementById('reg');if(re)re.value=rr.toUpperCase();}}catch(e){}}
 function setRoute(str){if(window.PW_SHARED)return;var rg=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');try{localStorage.setItem('pw_route',str);if(rg)localStorage.setItem('pw_reg',rg);}catch(e){}history.replaceState(null,'',location.pathname+'?route='+encodeURIComponent(str)+(rg?'&reg='+encodeURIComponent(rg):''));}
-function lockShared(){['rin','reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','go'].forEach(function(id){var e=document.getElementById(id); if(e) e.disabled=true;}); if(!document.getElementById('pw-shared-banner')){var out=document.getElementById('out'); var b=document.createElement('div'); b.id='pw-shared-banner'; b.style.cssText='background:#eef4ff;border:1px solid #cfe0f5;padding:7px 11px;border-radius:6px;margin:6px 0;color:#33506e;font-size:13px'; b.innerHTML='\uD83D\uDD12 <b>Shared flight (view only).</b> Aircraft, timing and route come from the sender and cannot be edited here.'; if(out&&out.parentNode) out.parentNode.insertBefore(b,out);}}
+function lockShared(){['rin','reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin','go'].forEach(function(id){var e=document.getElementById(id); if(e) e.disabled=true;}); if(!document.getElementById('pw-shared-banner')){var out=document.getElementById('out'); var b=document.createElement('div'); b.id='pw-shared-banner'; b.style.cssText='background:#eef4ff;border:1px solid #cfe0f5;padding:7px 11px;border-radius:6px;margin:6px 0;color:#33506e;font-size:13px'; b.innerHTML='\uD83D\uDD12 <b>Shared flight (view only).</b> Aircraft, timing and route come from the sender and cannot be edited here.'; if(out&&out.parentNode) out.parentNode.insertBefore(b,out);}}
 
 function _pwJSON(u,o){ return fetch(u,o||{}).then(function(r){return r.json();}).catch(function(){return {};}); }
 Promise.all([
@@ -88,7 +88,7 @@ Promise.all([
   _pwJSON('/wx/wx-config.json',{cache:'no-store'}),
   _pwJSON('/wx/navaids.json'), _pwJSON('/wx/fixes.json'), _pwJSON('/wx/airways.json'), _pwJSON('/wx/procedures.json')
 ]).then(function(res){AIRPORTS=res[0]||{};CFG=res[1]||{};DB.airports=AIRPORTS;DB.navaids=res[2]||{};DB.fixes=res[3]||{};DB.airways=res[4]||{};DB.procedures=res[5]||{}; var _SP=new URLSearchParams(location.search), _acRaw=_SP.get('ac'); window.PW_SHARED=!!_acRaw;
-  if(window.PW_SHARED){ try{var _ac=JSON.parse(_acRaw);['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit'].forEach(function(k){var e=document.getElementById(k); if(e&&_ac[k]!=null&&_ac[k]!=='') e.value=_ac[k];});}catch(e){} } else { loadAC(); }
+  if(window.PW_SHARED){ try{var _ac=JSON.parse(_acRaw);['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(k){var e=document.getElementById(k); if(e&&_ac[k]!=null&&_ac[k]!=='') e.value=_ac[k];});}catch(e){} } else { loadAC(); }
   try{var _ur=_SP.get('reg'); if(_ur){var _re=document.getElementById('reg'); if(_re) _re.value=_ur.toUpperCase().replace(/[^A-Z0-9]/g,'');}}catch(e){}
   var dd=document.getElementById('depdate'); if(dd&&!dd.value){var n=new Date();dd.value=n.getFullYear()+'-'+('0'+(n.getMonth()+1)).slice(-2)+'-'+('0'+n.getDate()).slice(-2);}
   var r=getRoute();document.getElementById('rin').value=r;render(r); if(window.PW_SHARED) lockShared();});
@@ -128,6 +128,7 @@ function render(routeStr){
   if(pts.length<2){out.innerHTML='<h1>Enter a route</h1><p class="sub">Type ≥2 identifiers (airways / SIDs / fixes are expanded automatically) and press Update.'+(miss.length?' Unknown: '+miss.join(', '):'')+'</p>';return;}
   setRoute(raw);
   var CR=num('cruise',10000),TAS=num('tas',145),USABLE=num('usable',87),GPH=num('gph',18),RSV=num('rsv',45),FU=((document.getElementById('funit')||{}).value)||'gal',FLU=((document.getElementById('flowunit')||{}).value)||'gph';
+  var AMAX=num('amax',0),AMIN=num('amin',0);   // cruise-altitude band for the wind optimizer (0 = unbounded)
   var legs=[],maxE=-9999,maxId='';
   var apI=[]; ALLPTS.forEach(function(pp,ix){ if(pp.kind==='apt') apI.push(ix); });
   for(var i=0;i<pts.length-1;i++){var a=[pts[i].la,pts[i].lo],b=[pts[i+1].la,pts[i+1].lo];
@@ -135,7 +136,7 @@ function render(routeStr){
     if(s!=null&&e!=null&&e>s){ for(var k=s;k<e;k++){ d+=gcNm([ALLPTS[k].la,ALLPTS[k].lo],[ALLPTS[k+1].la,ALLPTS[k+1].lo]); } sub=ALLPTS.slice(s,e+1).map(function(q){return [q.la,q.lo];}); } else { d=gcNm(a,b); sub=[a,b]; }
     legs.push({d:d,crs:brg(a,b),mid:[(a[0]+b[0])/2,(a[1]+b[1])/2],pts:sub});}
   pts.forEach(function(p){if(p.el!=null&&p.el>maxE){maxE=p.el;maxId=p.id;}});
-  STATE={pts:pts,legs:legs,CR:CR,TAS:TAS,USABLE:USABLE,GPH:GPH,RSV:RSV,FU:FU,FLU:FLU,lv:nearestLv(CR),maxE:maxE,maxId:maxId,dep:depEpoch()};
+  STATE={pts:pts,legs:legs,CR:CR,TAS:TAS,USABLE:USABLE,GPH:GPH,RSV:RSV,FU:FU,FLU:FLU,amax:AMAX,amin:AMIN,lv:nearestLv(CR),maxE:maxE,maxId:maxId,dep:depEpoch()};
   var depTxt=(document.getElementById('dep').value?('dep '+hhmmL(STATE.dep)+'L / '+hhmmZ(STATE.dep)):'dep now');
   var regv=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   var h='<h1>'+(regv?regv+' · ':'')+pts.map(function(p){return p.id;}).join(' → ')+'</h1>';
@@ -252,7 +253,8 @@ function compute(){
 
 function bestAlt(){ // compare avg component across levels
   if(!WINDARR) return null; var S=STATE,best=null;
-  LV.forEach(function(l){ var hpa=l[0]; if(!WINDARR[0]||!WINDARR[0]['ws'+hpa]) return;
+  LV.forEach(function(l){ var hpa=l[0], ft=l[1]; if(!WINDARR[0]||!WINDARR[0]['ws'+hpa]) return;
+    if(S.amax&&ft>S.amax) return; if(S.amin&&ft<S.amin) return;   // keep candidates within the aircraft's cruise band
     var sum=0,n=0,t=S.dep;
     for(var i=0;i<S.legs.length;i++){ var wa=WINDARR[i]; var ix=wa.time.indexOf(hourStr(t)); if(ix<0)ix=0;
       var dr=wa['wd'+hpa][ix],sp=wa['ws'+hpa][ix]; if(dr!=null){ sum+=headwind(sp,dr,S.legs[i].crs); n++; }
@@ -399,14 +401,14 @@ function condSum(cats,pts){var bad=pts.filter(function(p){return cats[p.id]&&cat
 
 document.getElementById('go').addEventListener('click',function(){render(document.getElementById('rin').value);});
 document.getElementById('rin').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();render(this.value);}});
-['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit'].forEach(function(id){document.getElementById(id).addEventListener('change',function(){render(document.getElementById('rin').value);});});
+['reg','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(id){document.getElementById(id).addEventListener('change',function(){render(document.getElementById('rin').value);});});
 document.getElementById('print').addEventListener('click',function(){window.print();});
 document.getElementById('tomap').addEventListener('click',function(){var rt=((document.getElementById('rin')||{}).value||'').trim().toUpperCase();var rg=((document.getElementById('reg')||{}).value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');if(!rt){return;}var q='/wx/?route='+encodeURIComponent(rt)+(rg?'&reg='+encodeURIComponent(rg):'');window.open(q,'_blank');});
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-window.PW_getState=function(){var g=function(id){return (document.getElementById(id)||{}).value;};return {route:g('rin')||'',aircraft:{reg:g('reg'),depdate:g('depdate'),dep:g('dep'),deptz:g('deptz'),cruise:g('cruise'),tas:g('tas'),usable:g('usable'),gph:g('gph'),rsv:g('rsv')}};};
-window.PW_applyState=function(s){var st=function(id,v){var e=document.getElementById(id); if(e&&v!=null&&v!=='')e.value=v;}; if(s.aircraft){st('reg',s.aircraft.reg);st('depdate',s.aircraft.depdate);st('dep',s.aircraft.dep);st('deptz',s.aircraft.deptz);st('cruise',s.aircraft.cruise);st('tas',s.aircraft.tas);st('usable',s.aircraft.usable);st('gph',s.aircraft.gph);st('rsv',s.aircraft.rsv);} if(s.route){st('rin',s.route); if(typeof render==='function') render(s.route);} };
+window.PW_getState=function(){var g=function(id){return (document.getElementById(id)||{}).value;};return {route:g('rin')||'',aircraft:{reg:g('reg'),depdate:g('depdate'),dep:g('dep'),deptz:g('deptz'),cruise:g('cruise'),tas:g('tas'),usable:g('usable'),gph:g('gph'),rsv:g('rsv'),amax:g('amax'),amin:g('amin')}};};
+window.PW_applyState=function(s){var st=function(id,v){var e=document.getElementById(id); if(e&&v!=null&&v!=='')e.value=v;}; if(s.aircraft){st('reg',s.aircraft.reg);st('depdate',s.aircraft.depdate);st('dep',s.aircraft.dep);st('deptz',s.aircraft.deptz);st('cruise',s.aircraft.cruise);st('tas',s.aircraft.tas);st('usable',s.aircraft.usable);st('gph',s.aircraft.gph);st('rsv',s.aircraft.rsv);st('amax',s.aircraft.amax);st('amin',s.aircraft.amin);} if(s.route){st('rin',s.route); if(typeof render==='function') render(s.route);} };
 </script>
 <script src="/pwauth.js"></script>
 </body></html>
