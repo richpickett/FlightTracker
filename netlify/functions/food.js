@@ -18,7 +18,7 @@ exports.handler = async (event) => {
   try {
     const r = await fetch(PLACES, { method: "POST",
       headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key,
-        "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.primaryType,places.formattedAddress,places.googleMapsUri" },
+        "X-Goog-FieldMask": "places.displayName,places.location,places.rating,places.userRatingCount,places.primaryTypeDisplayName,places.primaryType,places.types,places.formattedAddress,places.googleMapsUri" },
       body: JSON.stringify(body) });
     const txt = await r.text();
     if (!r.ok) return J(200, { places: [], note: "google " + r.status, detail: txt.slice(0,220) });
@@ -26,9 +26,12 @@ exports.handler = async (event) => {
     // street name only, house number stripped, normalized for comparison
     const streetOf = a => { if (!a) return ""; const s = String(a).split(",")[0].replace(/^\s*\d+[-\s]*/, "").replace(/\b(ste|suite|unit|#).*$/i, ""); return s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); };
     const raw = (j.places || []).filter(p => p.location && p.location.latitude != null && p.location.longitude != null);
-    const apt = raw.find(p => p.primaryType === "airport");
+    // "airport" in includedTypes also pulls in aviation businesses (flight schools, heliports, aircraft rental)
+    // that carry an airport/heliport place-type — keep them OUT of the food list, but still use the airport for the street.
+    const isAviation = p => (p.types || []).some(t => t === "airport" || t === "heliport" || t === "international_airport");
+    const apt = raw.find(p => p.primaryType === "airport") || raw.find(isAviation);
     const aptStreet = apt ? streetOf(apt.formattedAddress) : "";
-    const places = raw.filter(p => p.primaryType !== "airport" && p.displayName && p.displayName.text).map(p => ({
+    const places = raw.filter(p => !isAviation(p) && p.displayName && p.displayName.text).map(p => ({
       name: (p.displayName && p.displayName.text) || "",
       lat: p.location.latitude, lon: p.location.longitude,
       rating: (p.rating != null) ? p.rating : null, count: (p.userRatingCount != null) ? p.userRatingCount : null,
