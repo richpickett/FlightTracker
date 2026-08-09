@@ -504,13 +504,18 @@ function loadHazards(){
       var pg=L.polygon(z.coords,st).bindTooltip((z.onRoute?'⚑ ':'')+nesc(z.kind)+' · '+nesc(z.label)+(z.alt?' ('+nesc(z.alt)+')':''),{sticky:true}).addTo(g);
       if(z.onRoute) pg.bringToFront(); });
     box.className='';
-    box.innerHTML=list.map(function(z){
-      return '<div class="wxrow"'+(z.onRoute?' style="background:#fbfdff"':'')+'><span class="badge" style="background:'+(HZCOL[z.group]||'#8090a0')+(z.onRoute?'':';opacity:.55')+'">'+nesc(z.group)+'</span> '+(z.onRoute?'<b>⚑ ':'<span style="color:#889">')+nesc(z.label||'')+(z.onRoute?'</b>':'</span>')
+    // Route-crossing areas listed individually (flagged, with text); the rest of the US collapsed by type into one ×N line each.
+    var onR=list.filter(function(z){return z.onRoute;}), off=list.filter(function(z){return !z.onRoute;});
+    function hzRow(z,n){
+      return '<div class="wxrow"'+(z.onRoute?' style="background:#fbfdff"':'')+'><span class="badge" style="background:'+(HZCOL[z.group]||'#8090a0')+(z.onRoute?'':';opacity:.55')+'">'+nesc(z.group)+'</span> '+(z.onRoute?'<b>⚑ ':'<span style="color:#889">')+nesc(z.label||'')+((!z.onRoute&&n>1)?' ×'+n:'')+(z.onRoute?'</b>':'</span>')
         +(z.sev?' <span style="color:#889">'+nesc(z.sev)+'</span>':'')
         +(z.alt?' <span style="color:#889">'+nesc(z.alt)+'</span>':'')
         +(z.valid?' <span style="color:#889">'+nesc(z.valid)+'</span>':'')
         +(z.onRoute&&z.text?'<span class="raw">'+nesc(z.text)+'</span>':'')+'</div>';
-    }).join('');
+    }
+    var seen={},order=[]; off.forEach(function(z){ var k=z.group+'|'+z.label+'|'+z.alt; if(!seen[k]){seen[k]={z:z,n:0};order.push(k);} seen[k].n++; });
+    var head='<div class="sub" style="margin-bottom:4px">'+list.length+' hazard area'+(list.length!=1?'s':'')+' over the US'+(onR.length?' · <b>'+onR.length+' cross your route ⚑</b>':' · none cross your route')+'</div>';
+    box.innerHTML=head + onR.map(function(z){return hzRow(z,1);}).join('') + order.map(function(k){return hzRow(seen[k].z,seen[k].n);}).join('');
     setTimeout(function(){ if(HZMAP) HZMAP.invalidateSize(); },200);
   }).catch(function(){ box.innerHTML='<span class="sub">hazards unavailable</span>'; });
 }
