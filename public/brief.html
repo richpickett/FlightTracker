@@ -23,6 +23,7 @@
   .wxrow{padding:6px 0;border-bottom:1px solid #eef1f5} .badge{display:inline-block;padding:1px 7px;border-radius:5px;color:#fff;font-weight:700;font-size:12px}
   .raw{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#243247;display:block;margin-top:2px;white-space:pre-wrap} .taf{color:#0b4a8a}
   .onfield{display:inline-block;background:#0b6b3a;color:#fff;font-weight:700;font-size:10px;letter-spacing:.04em;padding:1px 6px;border-radius:4px;margin:0 3px;vertical-align:1px;font-family:system-ui,-apple-system,sans-serif}
+  .ntag{display:inline-block;color:#fff;font-weight:700;font-size:9.5px;letter-spacing:.03em;padding:1px 5px;border-radius:4px;margin-right:5px;vertical-align:1px;font-family:system-ui,-apple-system,sans-serif}
   ul{margin:5px 0;padding-left:18px} li{margin:2px 0} a.inline{color:var(--blue)}
   .flag{background:#fff8e6;border:1px solid #e8cf7a;border-radius:6px;padding:7px 10px;margin:6px 0;font-size:13px}
   .foot{color:var(--dim);font-size:11px;margin-top:16px;border-top:1px solid var(--line);padding-top:8px}
@@ -510,6 +511,19 @@ function loadHazards(){
     setTimeout(function(){ if(HZMAP) HZMAP.invalidateSize(); },200);
   }).catch(function(){ box.innerHTML='<span class="sub">hazards unavailable</span>'; });
 }
+// Classify a NOTAM so pilots can scan by type, and float the operationally-significant ones to the top.
+var NOTAM_CATS=[
+  {re:/\bRWY\b|RUNWAY/,label:'RUNWAY',color:'#c0392b',pri:1},
+  {re:/\bILS\b|\bLOC\b|\bGP\b|\bVOR\b|\bGPS\b|RNAV|\bDME\b|\bIAP\b|APPROACH|\bAPCH\b|\bNDB\b|\bWAAS\b/,label:'APCH/NAV',color:'#b45309',pri:1},
+  {re:/\bTFR\b|AIRSPACE|TEMPORARY FLIGHT|PROHIBITED|RESTRICTED/,label:'AIRSPACE',color:'#7c3aed',pri:1},
+  {re:/\bTWY\b|TAXIWAY/,label:'TAXIWAY',color:'#0b3d91',pri:2},
+  {re:/OBST|CRANE|\bTOWER\b|\bTWR\b/,label:'OBSTACLE',color:'#0b6b3a',pri:2},
+  {re:/\bLGT\b|\bLGTD\b|LIGHTING|\bPAPI\b|\bVASI\b|\bREIL\b|\bMALSR\b|\bODALS\b|BEACON/,label:'LIGHTING',color:'#2563eb',pri:3},
+  {re:/\bFUEL\b|AVGAS|JET A|\bSVC\b|SERVICE|\bAWOS\b|\bASOS\b/,label:'SERVICES',color:'#6b7280',pri:3}
+];
+function notamCat(t){ t=(t||'').toUpperCase(); for(var i=0;i<NOTAM_CATS.length;i++){ if(NOTAM_CATS[i].re.test(t)) return NOTAM_CATS[i]; } return {label:'OTHER',color:'#6b7280',pri:4}; }
+var NOTAM_GLOSS=[[/\bRWY\b/g,'Runway'],[/\bTWY\b/g,'Taxiway'],[/\bCLSD\b/g,'closed'],[/\bAPCH\b/g,'approach'],[/\bU\/S\b/g,'unserviceable'],[/\bUNSVC\b/g,'unserviceable'],[/\bMAINT\b/g,'maintenance'],[/\bWIP\b/g,'work in progress'],[/\bAVBL\b/g,'available'],[/\bOBST\b/g,'obstacle'],[/\bACFT\b/g,'aircraft'],[/\bBTN\b/g,'between'],[/\bTWR\b/g,'tower'],[/\bLGTD\b/g,'lighted'],[/\bPSN\b/g,'position'],[/\bEXC\b/g,'except']];
+function notamPlain(t){ t=String(t||''); NOTAM_GLOSS.forEach(function(g){ t=t.replace(g[0],g[1]); }); return t; }
 function loadNotams(pts){
   if(!CFG.notamProxy)return;
   var box=document.getElementById('notams');if(!box)return;
@@ -522,9 +536,12 @@ function loadNotams(pts){
     if(j.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable ('+nesc(j.error)+(j.detail?' — '+nesc(j.detail):'')+')</span>'; return; }
     var list=j.notams||[];
     if(!list.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no current NOTAMs</span>'; return; }
-    var total=j.total||list.length, shown=list.slice(0,20);
+    var total=j.total||list.length;
+    var arr=list.map(function(n){ n._c=notamCat(n.text); return n; }).sort(function(a,b){ return a._c.pri-b._c.pri; });
+    var shown=arr.slice(0,20);
     var html='<b>'+p.id+'</b> <span style="color:#889">'+total+' NOTAM'+(total==1?'':'s')+'</span>';
-    html+=shown.map(function(n){var eff=fmtNz(n.start)+(n.end?'–'+fmtNz(n.end):'');return '<span class="raw">'+(eff?'['+eff+'] ':'')+nesc(n.text)+'</span>';}).join('');
+    html+=shown.map(function(n){var eff=fmtNz(n.start)+(n.end?'–'+fmtNz(n.end):'');
+      return '<span class="raw"><span class="ntag" style="background:'+n._c.color+'">'+n._c.label+'</span>'+(eff?'['+eff+'] ':'')+nesc(notamPlain(n.text))+'</span>';}).join('');
     if(total>shown.length) html+='<span class="sub">…'+(total-shown.length)+' more — see <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a></span>';
     blk.innerHTML=html;
   }
