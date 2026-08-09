@@ -55,7 +55,7 @@
   select{background:#eef2f7;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px}
   a.btnlink{background:#0b3d91;color:#eaf2fb;border:1px solid #4aa3ff;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600;text-decoration:none;display:inline-block;white-space:nowrap}
   a.btnlink:hover{background:#12468f}
-  #routein{flex:1;min-width:180px;background:#f7faff;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;letter-spacing:.5px;box-sizing:border-box;font-family:inherit;resize:vertical;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.35;min-height:34px}
+  #routein{flex:1;min-width:180px;background:#f7faff;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;letter-spacing:.5px;box-sizing:border-box;font-family:inherit;resize:vertical;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.35;min-height:34px;text-transform:uppercase}
   #routein::placeholder{color:#9aa7b5}
   #sharebtn{background:#16a34a;color:#fff;border-color:#16a34a;font-weight:600}
   #sharebtn:hover{background:#15803d}
@@ -939,6 +939,7 @@ function buildBriefing(){
 // wiring
 document.getElementById('plotbtn').addEventListener('click',function(){ plotRoute(document.getElementById('routein').value); });
 document.getElementById('routein').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); plotRoute(this.value); } });
+document.getElementById('routein').addEventListener('input',function(){var s=this.selectionStart,e2=this.selectionEnd,u=this.value.toUpperCase();if(u!==this.value){this.value=u;try{this.setSelectionRange(s,e2);}catch(_){}}});
 
 // ---------- Share this live map ----------
 function flightQ(routeStr){
