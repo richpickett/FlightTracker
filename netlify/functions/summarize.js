@@ -3,9 +3,10 @@
 // Provider: ANTHROPIC_API_KEY (Claude Haiku) preferred, else OPENAI_API_KEY (gpt-4o-mini). No key -> {error}.
 // Cost is computed from token usage x per-model price so the client can tally briefing cost.
 const PRICE = {                                  // USD per 1M tokens {input, output} — adjust if pricing changes
-  "claude-3-5-haiku-latest": { in: 0.80, out: 4.00 },
-  "gpt-4o-mini":             { in: 0.15, out: 0.60 },
+  "claude-haiku-4-5": { in: 1.00, out: 5.00 },
+  "gpt-4o-mini":      { in: 0.15, out: 0.60 },
 };
+const priceOf = (m) => PRICE[m] || { in: 0, out: 0 };  // unknown model → 0 cost, never crash the summary
 exports.handler = async (event) => {
   const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST,OPTIONS", "Access-Control-Allow-Headers": "content-type", "Cache-Control": "no-store" };
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS };
@@ -26,7 +27,7 @@ exports.handler = async (event) => {
   const aKey = process.env.ANTHROPIC_API_KEY, oKey = process.env.OPENAI_API_KEY;
   try {
     if (aKey) {
-      const model = "claude-3-5-haiku-latest";
+      const model = "claude-haiku-4-5";
       const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
         headers: { "x-api-key": aKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         body: JSON.stringify({ model, max_tokens: 500, messages: [{ role: "user", content: prompt }] }) });
@@ -34,7 +35,7 @@ exports.handler = async (event) => {
       const j = JSON.parse(t);
       const summary = (j.content || []).map(c => c.text || "").join("").trim();
       const inTok = (j.usage && j.usage.input_tokens) || 0, outTok = (j.usage && j.usage.output_tokens) || 0;
-      const p = PRICE[model], costUSD = (inTok / 1e6) * p.in + (outTok / 1e6) * p.out;
+      const p = priceOf(model), costUSD = (inTok / 1e6) * p.in + (outTok / 1e6) * p.out;
       return J(200, { summary, model, usage: { in: inTok, out: outTok }, costUSD: +costUSD.toFixed(6) });
     }
     if (oKey) {
@@ -46,7 +47,7 @@ exports.handler = async (event) => {
       const j = JSON.parse(t);
       const summary = (((j.choices || [])[0] || {}).message || {}).content || "";
       const inTok = (j.usage && j.usage.prompt_tokens) || 0, outTok = (j.usage && j.usage.completion_tokens) || 0;
-      const p = PRICE[model], costUSD = (inTok / 1e6) * p.in + (outTok / 1e6) * p.out;
+      const p = priceOf(model), costUSD = (inTok / 1e6) * p.in + (outTok / 1e6) * p.out;
       return J(200, { summary: summary.trim(), model, usage: { in: inTok, out: outTok }, costUSD: +costUSD.toFixed(6) });
     }
     return J(200, { error: "no LLM key configured (set ANTHROPIC_API_KEY or OPENAI_API_KEY)" });
