@@ -161,7 +161,7 @@ function dedupeRoute(ids){ var o=ids.slice();
   for(var k=Math.floor(o.length/2); k>=1; k--){ var same=true; for(var j=0;j<k;j++){ if(o[j]!==o[k+j]){same=false;break;} } if(same){ o=o.slice(0,k).concat(o.slice(2*k)); break; } }
   var out=[]; for(var i=0;i<o.length;i++){ if(i===0||o[i]!==o[i-1]) out.push(o[i]); } return out; }
 function render(routeStr){
-  var out=document.getElementById('out'); saveAC();
+  var out=document.getElementById('out'); saveAC(); PW_COST={places:0,notam:0,llmUSD:0,llmTok:0};
   var raw=(routeStr||'').trim().toUpperCase();
   var exp=(window.PWRoute?PWRoute.expand(raw,DB):{points:[],unresolved:[],notes:[]});
   var ALLPTS=exp.points, miss=exp.unresolved;
@@ -184,6 +184,7 @@ function render(routeStr){
   var regv=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   var h='<h1>'+(regv?regv+' · ':'')+pts.map(function(p){return p.id;}).join(' → ')+'</h1>';
   h+='<div class="sub">'+pts.map(function(p){return p.name;}).join(' · ')+'</div>';
+  h+='<div id="costbar" class="sub" style="margin-top:2px"></div>';
   h+='<div class="sub">'+(regv?'<b>'+regv+'</b> · ':'')+depTxt+' · cruise <b>'+CR.toLocaleString()+'′</b> (~'+STATE.lv[2]+') · TAS '+TAS+' · '+USABLE+' '+FU+' / '+GPH+' '+FLU+' · '+(pts.length-1)+' legs'+(miss.length?' · <span style="color:#c00">unknown: '+miss.join(', ')+'</span>':'')+'</div>';
   h+='<h2>Route</h2><div id="mapwrap"><div id="bmap"></div><div class="mapleg" id="mapleg"></div></div><div id="narr"></div><div id="ov"></div><h2>Legs</h2><div id="legsec"></div><div id="condsum"></div>';
   h+='<h2>Current conditions &amp; TAF</h2><div id="wx"></div>';
@@ -203,6 +204,7 @@ function render(routeStr){
   h+='<div class="foot">Personal Wings · planning aid — not a substitute for a 1800wxbrief/FSS briefing, TFR/NOTAM check, W&amp;B, and DA/performance planning. METAR: NWS · TAF: metar-taf.com · winds: Open-Meteo · fuel/FBO: AirNav.</div>';
   out.innerHTML=h;
   buildMap(pts, ALLPTS);
+  updateCostBar();
   WINDARR=null; compute(); loadMetars(pts); loadWinds(); loadHazards(); loadNotams(pts); loadFood(pts);
 }
 function smDist(la1,lo1,la2,lo2){ var R=3958.8,p1=la1*Math.PI/180,p2=la2*Math.PI/180,dp=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180;
@@ -256,6 +258,7 @@ function loadFood(pts){
         // &v rotates hourly so the request URL changes every hour: busts any stale CDN-cached response
         // (a fixed URL can get frozen at the edge for the full max-age) while still caching within the hour.
         fetch('/.netlify/functions/food?lat='+p.la+'&lon='+p.lo+'&radius=3218&v='+Math.floor(Date.now()/3600000)).then(function(r){return r.json();}).then(function(j){
+          if(typeof PW_COST!=='undefined'){ PW_COST.places++; updateCostBar(); }
           var data={places:(j&&j.places)?j.places:[], aptStreet:(j&&j.aptStreet)||''}; FOOD_CACHE[p.id]=data; renderField(p,data); done();
         }).catch(function(){ var blk=rows[p.id]; if(blk) blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">lookup busy — <a class="inline" href="'+gmapsFood(p)+'" target="_blank">food within 2 mi ↗</a></span>'; done(); });
       })(fields[qi++]);
@@ -524,35 +527,79 @@ var NOTAM_CATS=[
 function notamCat(t){ t=(t||'').toUpperCase(); for(var i=0;i<NOTAM_CATS.length;i++){ if(NOTAM_CATS[i].re.test(t)) return NOTAM_CATS[i]; } return {label:'OTHER',color:'#6b7280',pri:4}; }
 var NOTAM_GLOSS=[[/\bRWY\b/g,'Runway'],[/\bTWY\b/g,'Taxiway'],[/\bCLSD\b/g,'closed'],[/\bAPCH\b/g,'approach'],[/\bU\/S\b/g,'unserviceable'],[/\bUNSVC\b/g,'unserviceable'],[/\bMAINT\b/g,'maintenance'],[/\bWIP\b/g,'work in progress'],[/\bAVBL\b/g,'available'],[/\bOBST\b/g,'obstacle'],[/\bACFT\b/g,'aircraft'],[/\bBTN\b/g,'between'],[/\bTWR\b/g,'tower'],[/\bLGTD\b/g,'lighted'],[/\bPSN\b/g,'position'],[/\bEXC\b/g,'except']];
 function notamPlain(t){ t=String(t||''); NOTAM_GLOSS.forEach(function(g){ t=t.replace(g[0],g[1]); }); return t; }
+// ---- briefing cost tally (paid APIs only; METAR/TAF/winds/hazards are free) ----
+var PW_COST={places:0,notam:0,llmUSD:0,llmTok:0};
+var COST_UNIT={places:0.035, notam:0.0038};   // USD/call: Google Places Enterprise Nearby; SkyLink Basic ($19/5000)
+function costTotal(){ return PW_COST.places*COST_UNIT.places + PW_COST.notam*COST_UNIT.notam + PW_COST.llmUSD; }
+function updateCostBar(){ var el=document.getElementById('costbar'); if(!el) return;
+  var parts=[]; if(PW_COST.notam)parts.push('NOTAM ×'+PW_COST.notam); if(PW_COST.places)parts.push('Food ×'+PW_COST.places);
+  if(PW_COST.llmTok)parts.push('AI '+PW_COST.llmTok.toLocaleString()+' tok $'+PW_COST.llmUSD.toFixed(4));
+  el.innerHTML='Est. cost this briefing: <b>$'+costTotal().toFixed(4)+'</b>'+(parts.length?' <span style="color:#889">· '+parts.join(' · ')+'</span>':' <span style="color:#889">(free sources only)</span>'); }
+
+var NOTAM_RES={}, NOTAM_AI={};
 function loadNotams(pts){
   if(!CFG.notamProxy)return;
   var box=document.getElementById('notams');if(!box)return;
-  box.className='';box.innerHTML='<div class="sub">⚠ Location NOTAMs only — not a substitute for a full official briefing. Confirm TFRs, FDC &amp; GPS NOTAMs at <a class="inline" href="https://www.1800wxbrief.com" target="_blank">1800wxbrief</a>.<span id="nquota"></span></div>';
+  NOTAM_RES={};
+  box.className='';box.innerHTML='<div class="sub">⚠ Location NOTAMs only — not a substitute for a full official briefing. Confirm TFRs, FDC &amp; GPS NOTAMs at <a class="inline" href="https://www.1800wxbrief.com" target="_blank">1800wxbrief</a>. · Summarize <select id="nsum" style="font-size:12px;padding:1px 3px"><option value="off">Off</option><option value="plain">Plain (free)</option><option value="ai">AI</option></select><span id="nquota"></span></div>';
+  var sel=document.getElementById('nsum'); if(sel) sel.addEventListener('change',function(){ Object.keys(NOTAM_RES).forEach(renderOneNotam); });
   var notCfg=false, items=[];
   pts.forEach(function(p){ var blk=document.createElement('div');blk.className='wxrow';blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">…</span>';box.appendChild(blk); items.push({p:p,blk:blk}); });
-  function paint(j,p,blk){
-    if(j.quota&&j.quota.limit!=null){ var qe=document.getElementById('nquota'); if(qe) qe.innerHTML=' · <b style="color:#0b6b3a">SkyLink '+(j.quota.remaining!=null?j.quota.remaining.toLocaleString():'?')+'/'+j.quota.limit.toLocaleString()+' left this period</b>'; }
+  function onData(j,p,blk){
+    if(j.quota&&j.quota.limit!=null){ var qe=document.getElementById('nquota'); if(qe) qe.innerHTML=' · <b style="color:#0b6b3a">SkyLink '+(j.quota.remaining!=null?j.quota.remaining.toLocaleString():'?')+'/'+j.quota.limit.toLocaleString()+' left</b>'; }
     if(j.configured===false){ if(!notCfg){notCfg=true;box.innerHTML='<div class="sub">Live NOTAMs not configured yet — add a NOTAM key in Netlify, or use <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a>.</div>';} return; }
-    if(j.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable ('+nesc(j.error)+(j.detail?' — '+nesc(j.detail):'')+')</span>'; return; }
-    var list=j.notams||[];
-    if(!list.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no current NOTAMs</span>'; return; }
-    var total=j.total||list.length;
-    var arr=list.map(function(n){ n._c=notamCat(n.text); return n; }).sort(function(a,b){ return a._c.pri-b._c.pri; });
-    var shown=arr.slice(0,20);
-    var html='<b>'+p.id+'</b> <span style="color:#889">'+total+' NOTAM'+(total==1?'':'s')+'</span>';
-    html+=shown.map(function(n){var eff=fmtNz(n.start)+(n.end?'–'+fmtNz(n.end):'');
-      return '<span class="raw"><span class="ntag" style="background:'+n._c.color+'">'+n._c.label+'</span>'+(eff?'['+eff+'] ':'')+nesc(notamPlain(n.text))+'</span>';}).join('');
-    if(total>shown.length) html+='<span class="sub">…'+(total-shown.length)+' more — see <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a></span>';
-    blk.innerHTML=html;
+    NOTAM_RES[p.id]={j:j,p:p,blk:blk}; renderOneNotam(p.id);
   }
   // Serialize (one at a time, small gap) so a low free-tier rate limit can't 429 us on parallel airports.
   var qi=0;
   function next(){ if(qi>=items.length) return; var it=items[qi++];
-    fetch(CFG.notamProxy+'?id='+encodeURIComponent(it.p.id)).then(function(r){return r.json();}).then(function(j){ paint(j,it.p,it.blk); })
+    fetch(CFG.notamProxy+'?id='+encodeURIComponent(it.p.id)).then(function(r){return r.json();}).then(function(j){ PW_COST.notam++; updateCostBar(); onData(j,it.p,it.blk); })
       .catch(function(){ it.blk.innerHTML='<b>'+it.p.id+'</b> <span style="color:#889">NOTAMs unavailable</span>'; })
       .then(function(){ setTimeout(next,350); });
   }
   next();
+}
+function renderOneNotam(id){
+  var e=NOTAM_RES[id]; if(!e) return; var j=e.j, p=e.p, blk=e.blk;
+  if(j.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable ('+nesc(j.error)+(j.detail?' — '+nesc(j.detail):'')+')</span>'; return; }
+  var list=j.notams||[];
+  if(!list.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no current NOTAMs</span>'; return; }
+  var total=j.total||list.length;
+  var arr=list.map(function(n){ n._c=notamCat(n.text); return n; }).sort(function(a,b){ return a._c.pri-b._c.pri; });
+  var mode=(document.getElementById('nsum')||{}).value||'off';
+  if(mode==='ai') return renderNotamAI(id,arr,total);
+  if(mode==='plain'){
+    var sig=arr.filter(function(n){return n._c.pri<=2;}), byCat={};
+    arr.forEach(function(n){ byCat[n._c.label]=(byCat[n._c.label]||0)+1; });
+    var counts=Object.keys(byCat).map(function(k){return byCat[k]+' '+k;}).join(', ');
+    var h='<b>'+p.id+'</b> <span style="color:#889">'+total+' NOTAM'+(total==1?'':'s')+' · '+counts+'</span>';
+    h+=sig.slice(0,6).map(function(n){ return '<span class="raw"><span class="ntag" style="background:'+n._c.color+'">'+n._c.label+'</span>'+nesc(notamPlain(n.text).split(/\.\s|;\s/)[0]).slice(0,120)+'</span>'; }).join('');
+    if(!sig.length) h+='<span class="sub">No runway/approach/airspace items. Switch to Off for the full list.</span>';
+    blk.innerHTML=h; return;
+  }
+  var shown=arr.slice(0,20);
+  var html='<b>'+p.id+'</b> <span style="color:#889">'+total+' NOTAM'+(total==1?'':'s')+'</span>';
+  html+=shown.map(function(n){var eff=fmtNz(n.start)+(n.end?'–'+fmtNz(n.end):'');
+    return '<span class="raw"><span class="ntag" style="background:'+n._c.color+'">'+n._c.label+'</span>'+(eff?'['+eff+'] ':'')+nesc(notamPlain(n.text))+'</span>';}).join('');
+  if(total>shown.length) html+='<span class="sub">…'+(total-shown.length)+' more — see <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a></span>';
+  blk.innerHTML=html;
+}
+function renderNotamAI(id,arr,total){
+  var e=NOTAM_RES[id]; if(!e) return; var p=e.p, blk=e.blk;
+  if(NOTAM_AI[id]) return paintNotamAI(id,NOTAM_AI[id]);
+  blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">summarizing '+total+' NOTAMs with AI…</span>';
+  fetch('/.netlify/functions/summarize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({airport:p.id,texts:arr.map(function(n){return n.text;})})})
+    .then(function(r){return r.json();}).then(function(s){
+      if(s&&s.costUSD){ PW_COST.llmUSD+=s.costUSD; PW_COST.llmTok+=((s.usage&&(s.usage.in+s.usage.out))||0); updateCostBar(); }
+      NOTAM_AI[id]=s; paintNotamAI(id,s);
+    }).catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">AI summary unavailable</span>'; });
+}
+function paintNotamAI(id,s){
+  var e=NOTAM_RES[id]; if(!e) return; var p=e.p, blk=e.blk;
+  if(!s||s.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">AI summary unavailable'+(s&&s.error?' ('+nesc(s.error)+')':'')+'</span>'; return; }
+  var txt=nesc(s.summary||'').replace(/\n/g,'<br>');
+  blk.innerHTML='<b>'+p.id+'</b> <span class="ntag" style="background:#0b3d91">AI</span><div class="raw" style="white-space:normal">'+txt+'</div>'
+    +(s.costUSD?'<span class="sub">'+nesc(s.model||'')+' · '+((s.usage&&(s.usage.in+s.usage.out))||0)+' tok · $'+s.costUSD.toFixed(4)+'</span>':'');
 }
 function condSum(cats,pts){var bad=pts.filter(function(p){return cats[p.id]&&cats[p.id]!=='VFR'&&cats[p.id]!=='NA';}).map(function(p){return p.id+' '+cats[p.id];});
   var el=document.getElementById('condsum');if(el)el.innerHTML=bad.length?'<div class="flag">⚠ Below-VFR fields now: <b>'+bad.join(', ')+'</b> — verify TAF trend, keep an approach-equipped alternate.</div>':'';
