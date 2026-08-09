@@ -153,6 +153,15 @@
     var pan=document.createElement('div'); pan.id='pwacct'; document.body.appendChild(pan);
     var pwClose=document.createElement('button'); pwClose.id='pwacct-close'; pwClose.type='button'; pwClose.setAttribute('aria-label','Close'); pwClose.textContent='\u2715'; pwClose.style.cssText='position:fixed;right:18px;top:62px;z-index:3001;background:none;border:none;color:#6b7889;font-size:16px;line-height:1;cursor:pointer;display:none;padding:2px 6px;width:auto'; document.body.appendChild(pwClose); pwClose.onclick=function(){ pan.classList.remove('open'); pwClose.style.display='none'; };
     window.PW_toggleAccount=toggle;
+    // Quick-save the current route to the account (used by the briefing's "Save Route" button). Returns Promise<{ok,error,name}>.
+    window.PW_saveRoute=function(){ return new Promise(function(res){
+      if(!SB||!USER){ if(pan&&!pan.classList.contains('open')) toggle(); res({ok:false,error:'signin'}); return; }
+      if(!window.PW_getState){ res({ok:false,error:'notready'}); return; }
+      var st=window.PW_getState(); if(!st||!st.route){ res({ok:false,error:'noroute'}); return; }
+      var nm=(window.prompt('Name this route:', st.route)||'').trim(); if(!nm){ res({ok:false,error:'cancel'}); return; }
+      SB.from('routes').insert({user_id:USER.id,name:nm,route:st.route,aircraft:st.aircraft||{}}).then(function(r){
+        if(r.error){ res({ok:false,error:r.error.message}); } else { if(pan.classList.contains('open')) listRoutes(); res({ok:true,name:nm}); } });
+    }); };
     // A password-recovery link lands here with type=recovery in the URL (hash or query).
     var wantRecovery=(location.hash+' '+location.search).indexOf('type=recovery')>=0;
     fetch('/wx/wx-config.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
