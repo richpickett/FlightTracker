@@ -456,6 +456,25 @@ var stnMarkers={};
 function stnIcon(id,color){
   return L.divIcon({className:'',html:'<div class="stn" style="background:'+color+'">'+id.replace('K','')+'</div>',iconSize:[30,16],iconAnchor:[15,8]});
 }
+// ---------- area METARs: every reporting station in the current viewport, colored by flight category ----------
+var areaMetarGroup=L.layerGroup().addTo(map), areaMetarOn=true, _areaTimer=null;
+function areaMetarsBust(){ clearTimeout(_areaTimer); _areaTimer=setTimeout(loadAreaMetars,500); }
+function loadAreaMetars(){
+  if(!areaMetarOn) return;
+  if(map.getZoom()<6){ areaMetarGroup.clearLayers(); return; }   // too zoomed out → skip (would be thousands of stations)
+  var b=map.getBounds(), bbox=[b.getSouth().toFixed(2),b.getWest().toFixed(2),b.getNorth().toFixed(2),b.getEast().toFixed(2)].join(',');
+  fetch('/.netlify/functions/metar?bbox='+encodeURIComponent(bbox)).then(function(r){return r.json();}).then(function(a){
+    areaMetarGroup.clearLayers(); if(!Array.isArray(a)) return;
+    a.slice(0,600).forEach(function(o){
+      var id=o.icaoId||o.station_id||''; var la=o.lat, lo=o.lon; if(!id||la==null||lo==null) return;
+      if(stnMarkers[id]) return;   // route airports already shown with richer (fuel/route) markers
+      var fc=o.fltCat||'NA';
+      L.circleMarker([la,lo],{radius:4,color:'#0b1017',weight:.6,fillColor:(CAT_COLOR[fc]||CAT_COLOR.NA),fillOpacity:.9})
+        .bindPopup('<b>'+id+'</b> <span style="background:'+(CAT_COLOR[fc]||'#94a3b8')+';color:#fff;padding:0 5px;border-radius:4px">'+fc+'</span><div class="metar-pop" style="margin-top:4px">'+(o.rawOb||'')+'</div>',{maxWidth:340})
+        .addTo(areaMetarGroup);
+    });
+  }).catch(function(){});
+}
 function loadMetars(){
   metarGroup.clearLayers(); stnMarkers={};
   STATIONS.forEach(function(s){
@@ -610,7 +629,10 @@ function updZoom(){
 map.on('zoom zoomend',updZoom); updZoom();
 document.getElementById('c-sat').addEventListener('change',function(e){ satShow(e.target.checked); });
 document.getElementById('o-sat').addEventListener('input',function(e){ satOp=e.target.value/100; satFront.setOpacity(satOp); });
-document.getElementById('c-metar').addEventListener('change',function(e){ if(e.target.checked) metarGroup.addTo(map); else map.removeLayer(metarGroup); });
+document.getElementById('c-metar').addEventListener('change',function(e){ areaMetarOn=e.target.checked;
+  if(e.target.checked){ metarGroup.addTo(map); areaMetarGroup.addTo(map); loadAreaMetars(); }
+  else { map.removeLayer(metarGroup); map.removeLayer(areaMetarGroup); } });
+map.on('moveend', areaMetarsBust);
 document.getElementById('base').addEventListener('change',function(e){ setBase(e.target.value); });
 
 document.getElementById('play').addEventListener('click',function(){ playing?pause():play(); });
@@ -620,7 +642,7 @@ document.getElementById('frame').addEventListener('input',function(e){ pause(); 
 document.getElementById('speed').addEventListener('change',function(){ if(playing) startTimer(); });
 
 function refreshAll(){
-  buildFrames(); applyFrame(NFRAMES-1); loadMetars(); loadWinds();
+  buildFrames(); applyFrame(NFRAMES-1); loadMetars(); loadAreaMetars(); loadWinds();
   if(document.getElementById('brief').classList.contains('open')) buildBriefing();
   document.getElementById('clock').textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+' local';
 }

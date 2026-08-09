@@ -5,6 +5,15 @@ exports.handler = async (event) => {
   const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,OPTIONS", "Cache-Control": "public, max-age=120" };
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS };
   const q = event.queryStringParameters || {};
+  // Area mode: bbox=minLat,minLon,maxLat,maxLon → every reporting station in the box (for the live-map viewport)
+  const bbox = (q.bbox || "").replace(/[^0-9.,\-]/g, "");
+  if (bbox) {
+    try {
+      const r = await fetch("https://aviationweather.gov/api/data/metar?bbox=" + encodeURIComponent(bbox) + "&format=json");
+      const body = await r.text();
+      return { statusCode: r.status, headers: { ...CORS, "Content-Type": "application/json" }, body: body || "[]" };
+    } catch (e) { return { statusCode: 200, headers: { ...CORS, "Content-Type": "application/json" }, body: "[]" }; }
+  }
   const id = (q.id || "").toUpperCase().replace(/[^A-Z0-9,]/g, "");
   if (!id) return { statusCode: 400, headers: CORS, body: "[]" };
   try {
