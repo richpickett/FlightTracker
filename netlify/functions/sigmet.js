@@ -43,7 +43,9 @@ exports.handler = async (event) => {
         text: String(f.rawAirSigmet || "").trim().slice(0, 400), coords: poly, onRoute: crosses(poly) });
     });
     // G-AIRMET — the snapshot valid-time nearest departure
-    const gaHits = (Array.isArray(ga) ? ga : []).map(f => ({ f, poly: toPoly(f.coords) })).filter(x => include(x.poly));
+    // Exclude FZLVL (freezing-level) — a continent-wide contour, not a localized hazard; it renders as huge horizontal bands.
+    const gaHits = (Array.isArray(ga) ? ga : []).map(f => ({ f, poly: toPoly(f.coords) }))
+      .filter(x => include(x.poly) && !/FZLVL/i.test(String(x.f.hazard || "")));
     let bestVt = null, bestDiff = Infinity;
     gaHits.forEach(({ f }) => { const t = Date.parse(f.validTime || "") / 1000; if (!isFinite(t)) return;
       const d = Math.abs(t - target); if (d < bestDiff) { bestDiff = d; bestVt = f.validTime; } });
