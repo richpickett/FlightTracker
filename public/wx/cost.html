@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal Wings — Briefing Cost Report</title>
+<style>
+  :root{
+    --plane:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --good:#006300;
+  }
+  @media (prefers-color-scheme:dark){ :root{
+    --plane:#0d0d0d; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --good:#0ca30c; } }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--plane);color:var(--ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  .wrap{max-width:1040px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:20px;margin:0 0 2px} .sub{color:var(--ink2);font-size:13px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:16px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px}
+  .kpi .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  .kpi .val{font-size:26px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+  .kpi .foot{color:var(--ink2);font-size:12px;margin-top:2px}
+  h2{font-size:15px;margin:0 0 12px}
+  .bars{display:flex;flex-direction:column;gap:6px}
+  .barrow{display:grid;grid-template-columns:96px 1fr 84px;align-items:center;gap:10px}
+  .barrow .k{color:var(--ink2);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+  .track{background:var(--grid);border-radius:4px;height:16px;position:relative;overflow:hidden}
+  .fill{height:100%;background:var(--s1);border-radius:4px;min-width:2px}
+  .barrow .v{font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--grid);font-variant-numeric:tabular-nums}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.n,th.n{text-align:right}
+  input,button{font:inherit} input[type=number]{width:110px;padding:6px 8px;border:1px solid var(--axis);border-radius:6px;background:var(--surface);color:var(--ink)}
+  button{background:var(--s1);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:600;cursor:pointer}
+  button.sec{background:transparent;color:var(--s1);border:1px solid var(--s1)}
+  .calc{display:grid;grid-template-columns:1fr 1fr;gap:20px} @media(max-width:720px){.calc{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
+  .calc label{display:block;color:var(--ink2);font-size:12px;margin:8px 0 3px}
+  .out{margin-top:10px;padding:10px;border:1px dashed var(--axis);border-radius:8px;font-variant-numeric:tabular-nums}
+  .pos{color:var(--good);font-weight:700} .neg{color:#d03b3b;font-weight:700}
+  #signin{max-width:320px} #signin input{width:100%;display:block;margin:6px 0;padding:8px;border:1px solid var(--axis);border-radius:6px;background:var(--surface);color:var(--ink)}
+  .msg{color:#d03b3b;font-size:13px;margin-top:6px;min-height:1em}
+  a{color:var(--s1)}
+  #tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--surface);font-size:12px;padding:4px 7px;border-radius:5px;opacity:0;transition:opacity .1s;z-index:10;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px">
+    <div><h1>Briefing Cost Report</h1><div class="sub">Personal Wings · what each briefing costs us to produce</div></div>
+    <div id="who" class="sub"></div>
+  </div>
+
+  <div id="gate" class="card" style="display:none">
+    <h2>Sign in</h2>
+    <div id="signin">
+      <input id="em" type="email" placeholder="email" autocomplete="email">
+      <input id="pw" type="password" placeholder="password" autocomplete="current-password">
+      <button id="btnin">Sign in</button>
+      <div class="msg" id="gmsg"></div>
+      <div class="sub" style="margin-top:8px">Use your Personal Wings admin account. Only an admin can see aggregate costs.</div>
+    </div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="kpis">
+      <div class="kpi"><div class="lbl">Briefings</div><div class="val" id="k-count">–</div><div class="foot" id="k-count-f"></div></div>
+      <div class="kpi"><div class="lbl">Total cost</div><div class="val" id="k-total">–</div><div class="foot">all time</div></div>
+      <div class="kpi"><div class="lbl">Avg / briefing</div><div class="val" id="k-avg">–</div><div class="foot">our cost to serve one</div></div>
+      <div class="kpi"><div class="lbl">Last 30 days</div><div class="val" id="k-30">–</div><div class="foot" id="k-30-f"></div></div>
+    </div>
+
+    <div class="card"><h2>Monthly cost</h2><div class="bars" id="ch-month"></div></div>
+    <div class="card"><h2>Cost by source (all time)</h2><div class="bars" id="ch-svc"></div></div>
+
+    <div class="card"><h2>By user</h2>
+      <table><thead><tr><th>User</th><th></th><th class="n">Briefings</th><th class="n">Total</th><th class="n">Avg</th><th>Last seen</th></tr></thead>
+      <tbody id="tb-user"></tbody></table>
+    </div>
+
+    <div class="card"><h2>Pricing check</h2>
+      <div class="sub" style="margin-bottom:10px">Would charging cover cost? Enter a price and see the margin against our measured average.</div>
+      <div class="calc">
+        <div>
+          <div style="font-weight:600">Per-briefing pricing</div>
+          <label>Price you'd charge per briefing (USD)</label>
+          <input id="p-brief" type="number" step="0.01" value="0.50">
+          <div class="out" id="o-brief"></div>
+        </div>
+        <div>
+          <div style="font-weight:600">Monthly subscription</div>
+          <label>Monthly price per user (USD)</label>
+          <input id="p-sub" type="number" step="0.01" value="9.99">
+          <label>Est. briefings / user / month</label>
+          <input id="p-vol" type="number" step="1" value="20">
+          <div class="out" id="o-sub"></div>
+        </div>
+      </div>
+      <div class="sub" style="margin-top:10px">Note: this is <b>direct API cost only</b> (Places, NOTAM, AI). It excludes hosting, SkyLink's flat $19/mo base, and your time.</div>
+    </div>
+
+    <div class="sub" style="margin-top:16px">Cost is computed from logged usage × the rate in effect at each briefing (3NF schema; prices carry history). <a href="/brief.html">← back to briefing</a></div>
+  </div>
+</div>
+<div id="tip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+var SB=null, CFG={};
+var fmt=function(n){ return '$'+(+n||0).toFixed(2); };
+var fmt4=function(n){ return '$'+(+n||0).toFixed(4); };
+var $=function(id){ return document.getElementById(id); };
+
+var tip=$('tip');
+function wireTip(el,text){ el.addEventListener('mousemove',function(e){ tip.textContent=text; tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY+12)+'px'; tip.style.opacity=1; });
+  el.addEventListener('mouseleave',function(){ tip.style.opacity=0; }); }
+
+function barChart(host, rows, labelFn, valFn, tipFn){
+  host.innerHTML='';
+  var max=0; rows.forEach(function(r){ max=Math.max(max, valFn(r)); });
+  rows.forEach(function(r){
+    var row=document.createElement('div'); row.className='barrow';
+    var k=document.createElement('div'); k.className='k'; k.textContent=labelFn(r);
+    var track=document.createElement('div'); track.className='track';
+    var fill=document.createElement('div'); fill.className='fill'; fill.style.width=(max>0?Math.max(1,(valFn(r)/max)*100):0)+'%';
+    track.appendChild(fill);
+    var v=document.createElement('div'); v.className='v'; v.textContent=fmt(valFn(r));
+    wireTip(track, tipFn(r));
+    row.appendChild(k); row.appendChild(track); row.appendChild(v); host.appendChild(row);
+  });
+  if(!rows.length) host.innerHTML='<div class="sub">No data yet.</div>';
+}
+
+var DATA={total:0,count:0,avg:0};
+function monthKey(iso){ var d=new Date(iso); return d.toLocaleString(undefined,{month:'short',year:'2-digit'}); }
+
+function loadAll(){
+  Promise.all([
+    SB.from('v_cost_by_month').select('*'),
+    SB.from('v_cost_by_service').select('*'),
+    SB.from('v_cost_by_user').select('*')
+  ]).then(function(res){
+    var months=(res[0].data||[]), svc=(res[1].data||[]), users=(res[2].data||[]);
+    if(res[0].error){ $('gate').style.display='block'; $('gmsg').textContent='Signed in, but no access to reports — is this account an admin? ('+res[0].error.message+')'; }
+    // KPIs
+    var total=0,count=0; months.forEach(function(m){ total+=+m.total_usd; count+=+m.briefings; });
+    DATA.total=total; DATA.count=count; DATA.avg=count?total/count:0;
+    $('k-count').textContent=count.toLocaleString();
+    $('k-total').textContent=fmt(total);
+    $('k-avg').textContent=fmt4(DATA.avg);
+    // last 30d from month view is coarse; approximate with current month
+    var now=new Date(), thisMonth=months.filter(function(m){ var d=new Date(m.month); return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth(); });
+    var c30=thisMonth.reduce(function(a,m){return a+ +m.total_usd;},0), n30=thisMonth.reduce(function(a,m){return a+ +m.briefings;},0);
+    $('k-30').textContent=fmt(c30); $('k-30-f').textContent=n30+' briefings (this month)';
+    $('k-count-f').textContent=(users.length)+' users';
+    // monthly chart
+    barChart($('ch-month'), months, function(m){return monthKey(m.month);}, function(m){return +m.total_usd;},
+      function(m){ return monthKey(m.month)+': '+fmt(m.total_usd)+' · '+m.briefings+' briefings · avg '+fmt4(m.avg_usd_per_briefing); });
+    // service chart (aggregate all months per service)
+    var byS={}; svc.forEach(function(s){ byS[s.service_code]=(byS[s.service_code]||0)+ +s.amount_usd; });
+    var sRows=Object.keys(byS).map(function(k){return {code:k,amt:byS[k]};}).sort(function(a,b){return b.amt-a.amt;});
+    barChart($('ch-svc'), sRows, function(r){return r.code;}, function(r){return r.amt;}, function(r){ return r.code+': '+fmt4(r.amt); });
+    // users table
+    var tb=$('tb-user'); tb.innerHTML='';
+    users.forEach(function(u){ var tr=document.createElement('tr');
+      var who=u.who.length>22?u.who.slice(0,10)+'…'+u.who.slice(-6):u.who;
+      tr.innerHTML='<td>'+who+'</td><td>'+(u.signed_in?'<span class="sub">account</span>':'<span class="sub">anon</span>')+'</td>'+
+        '<td class="n">'+u.briefings+'</td><td class="n">'+fmt(u.total_usd)+'</td><td class="n">'+fmt4(u.avg_usd_per_briefing)+'</td>'+
+        '<td class="sub">'+new Date(u.last_seen).toLocaleDateString()+'</td>';
+      tb.appendChild(tr); });
+    if(!users.length) tb.innerHTML='<tr><td colspan="6" class="sub">No briefings logged yet.</td></tr>';
+    recalc();
+  });
+}
+
+function recalc(){
+  var avg=DATA.avg||0;
+  var pb=+$('p-brief').value||0;
+  var mb=pb-avg, mbp=avg>0?(mb/avg*100):0;
+  $('o-brief').innerHTML='Cost/briefing '+fmt4(avg)+' · margin <span class="'+(mb>=0?'pos':'neg')+'">'+fmt4(mb)+'</span>'+(avg>0?' ('+(mb>=0?'+':'')+mbp.toFixed(0)+'%)':'');
+  var ps=+$('p-sub').value||0, vol=+$('p-vol').value||0;
+  var costUser=avg*vol, ms=ps-costUser;
+  $('o-sub').innerHTML='Cost/user/mo '+fmt(costUser)+' at '+vol+' briefings · margin <span class="'+(ms>=0?'pos':'neg')+'">'+fmt(ms)+'</span>';
+}
+['p-brief','p-sub','p-vol'].forEach(function(id){ document.addEventListener('input',function(e){ if(e.target&&e.target.id===id) recalc(); }); });
+
+function showApp(u){ $('gate').style.display='none'; $('app').style.display='block'; $('who').textContent=u?u.email:''; loadAll(); }
+function showGate(m){ $('app').style.display='none'; $('gate').style.display='block'; if(m)$('gmsg').textContent=m; }
+
+$('btnin').onclick=function(){ var e=$('em').value.trim(), p=$('pw').value;
+  if(!e||!p){ $('gmsg').textContent='Enter email and password.'; return; }
+  $('gmsg').textContent='Signing in…';
+  SB.auth.signInWithPassword({email:e,password:p}).then(function(r){ if(r.error){ $('gmsg').textContent=r.error.message; } else { showApp(r.data.user); } }); };
+
+fetch('/wx/wx-config.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+  CFG=j||{};
+  if(!CFG.supabaseUrl||!window.supabase){ showGate('Supabase not configured.'); return; }
+  SB=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseKey);
+  SB.auth.getUser().then(function(r){ var u=r.data?r.data.user:null; if(u) showApp(u); else showGate(''); });
+}).catch(function(){ showGate('Could not load config.'); });
+</script>
+</body>
+</html>

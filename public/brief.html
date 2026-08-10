@@ -161,7 +161,7 @@ function dedupeRoute(ids){ var o=ids.slice();
   for(var k=Math.floor(o.length/2); k>=1; k--){ var same=true; for(var j=0;j<k;j++){ if(o[j]!==o[k+j]){same=false;break;} } if(same){ o=o.slice(0,k).concat(o.slice(2*k)); break; } }
   var out=[]; for(var i=0;i<o.length;i++){ if(i===0||o[i]!==o[i-1]) out.push(o[i]); } return out; }
 function render(routeStr){
-  var out=document.getElementById('out'); saveAC(); PW_COST={places:0,notam:0,llmUSD:0,llmTok:0};
+  var out=document.getElementById('out'); saveAC(); PW_COST={places:0,notam:0,llmUSD:0,llmTok:0,llm:{}};
   var raw=(routeStr||'').trim().toUpperCase();
   var exp=(window.PWRoute?PWRoute.expand(raw,DB):{points:[],unresolved:[],notes:[]});
   var ALLPTS=exp.points, miss=exp.unresolved;
@@ -537,13 +537,28 @@ function notamCat(t){ t=(t||'').toUpperCase(); for(var i=0;i<NOTAM_CATS.length;i
 var NOTAM_GLOSS=[[/\bRWY\b/g,'Runway'],[/\bTWY\b/g,'Taxiway'],[/\bCLSD\b/g,'closed'],[/\bAPCH\b/g,'approach'],[/\bU\/S\b/g,'unserviceable'],[/\bUNSVC\b/g,'unserviceable'],[/\bMAINT\b/g,'maintenance'],[/\bWIP\b/g,'work in progress'],[/\bAVBL\b/g,'available'],[/\bOBST\b/g,'obstacle'],[/\bACFT\b/g,'aircraft'],[/\bBTN\b/g,'between'],[/\bTWR\b/g,'tower'],[/\bLGTD\b/g,'lighted'],[/\bPSN\b/g,'position'],[/\bEXC\b/g,'except']];
 function notamPlain(t){ t=String(t||''); NOTAM_GLOSS.forEach(function(g){ t=t.replace(g[0],g[1]); }); return t; }
 // ---- briefing cost tally (paid APIs only; METAR/TAF/winds/hazards are free) ----
-var PW_COST={places:0,notam:0,llmUSD:0,llmTok:0};
+var PW_COST={places:0,notam:0,llmUSD:0,llmTok:0,llm:{}};
 var COST_UNIT={places:0.035, notam:0.0038};   // USD/call: Google Places Enterprise Nearby; SkyLink Basic ($19/5000)
 function costTotal(){ return PW_COST.places*COST_UNIT.places + PW_COST.notam*COST_UNIT.notam + PW_COST.llmUSD; }
 function updateCostBar(){ var el=document.getElementById('costbar'); if(!el) return;
   var parts=[]; if(PW_COST.notam)parts.push('NOTAM ×'+PW_COST.notam); if(PW_COST.places)parts.push('Food ×'+PW_COST.places);
   if(PW_COST.llmTok)parts.push('AI '+PW_COST.llmTok.toLocaleString()+' tok $'+PW_COST.llmUSD.toFixed(4));
-  el.innerHTML='Est. cost this briefing: <b>$'+costTotal().toFixed(4)+'</b>'+(parts.length?' <span style="color:#889">· '+parts.join(' · ')+'</span>':' <span style="color:#889">(free sources only)</span>'); }
+  el.innerHTML='Est. cost this briefing: <b>$'+costTotal().toFixed(4)+'</b>'+(parts.length?' <span style="color:#889">· '+parts.join(' · ')+'</span>':' <span style="color:#889">(free sources only)</span>')+' <a href="/wx/cost.html" target="_blank" style="color:#889" title="Cost report across all briefings">· report ↗</a>';
+  PW_scheduleLog(); }
+// Persist each briefing's metered usage to Supabase (debounced until costs settle; deduped per route within 10 min).
+var PW_LOG={t:null,sig:'',at:0};
+var LLM_SVC={'claude-haiku-4-5':['llm_in_haiku45','llm_out_haiku45'],'gpt-4o-mini':['llm_in_gpt4omini','llm_out_gpt4omini']};
+function pwBuildUsage(){ var u={}; if(PW_COST.places)u.places_call=PW_COST.places; if(PW_COST.notam)u.notam_call=PW_COST.notam;
+  for(var m in PW_COST.llm){ var c=LLM_SVC[m]; if(!c)continue; var t=PW_COST.llm[m]; if(t.in)u[c[0]]=(u[c[0]]||0)+t.in; if(t.out)u[c[1]]=(u[c[1]]||0)+t.out; } return u; }
+function PW_scheduleLog(){ if(window.PW_SHARED||!window.PW_logBriefing) return;
+  var route=((document.getElementById('rin')||{}).value||'').trim(); if(!route) return;
+  if(PW_LOG.t) clearTimeout(PW_LOG.t);
+  PW_LOG.t=setTimeout(function(){ var sig=route.toUpperCase(), now=Date.now();
+    if(sig===PW_LOG.sig && (now-PW_LOG.at)<600000) return;        // same route logged in the last 10 min → skip
+    PW_LOG.sig=sig; PW_LOG.at=now;
+    var st=(window.PW_getState&&window.PW_getState())||{};
+    window.PW_logBriefing({ route_text:route, waypoint_count:(typeof STATE!=='undefined'&&STATE&&STATE.pts?STATE.pts.length:null),
+      aircraft_reg:(st.aircraft&&st.aircraft.reg)||null, usage:pwBuildUsage() }); }, 5000); }
 
 var NOTAM_RES={}, NOTAM_AI={};
 function loadNotams(pts){
@@ -599,7 +614,9 @@ function renderNotamAI(id,arr,total){
   blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">summarizing '+total+' NOTAMs with AI…</span>';
   fetch('/.netlify/functions/summarize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({airport:p.id,texts:arr.map(function(n){return n.text;})})})
     .then(function(r){return r.json();}).then(function(s){
-      if(s&&s.costUSD){ PW_COST.llmUSD+=s.costUSD; PW_COST.llmTok+=((s.usage&&(s.usage.in+s.usage.out))||0); updateCostBar(); }
+      if(s&&s.costUSD){ PW_COST.llmUSD+=s.costUSD; PW_COST.llmTok+=((s.usage&&(s.usage.in+s.usage.out))||0);
+        if(s.model&&s.usage){ var _m=PW_COST.llm[s.model]||(PW_COST.llm[s.model]={in:0,out:0}); _m.in+=(s.usage.in||0); _m.out+=(s.usage.out||0); }
+        updateCostBar(); }
       NOTAM_AI[id]=s; paintNotamAI(id,s);
     }).catch(function(){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">AI summary unavailable</span>'; });
 }

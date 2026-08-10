@@ -143,6 +143,10 @@
       Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),function(a){a.onclick=function(){SB.from('routes').delete().eq('id',a.getAttribute('data-del')).then(function(){listRoutes();});};});
     });}
 
+  function uuid(){ try{ if(window.crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16);}); }
+  function clientId(){ try{ var k='pw_cid', v=localStorage.getItem(k); if(!v){ v=uuid(); localStorage.setItem(k,v); } return v; }catch(e){ return null; } }
+
   function boot(){
     style();
     // Use an in-page trigger if the page provides one (#pw-acct-slot); else float a pill top-right.
@@ -161,6 +165,29 @@
       var nm=(window.prompt('Name this route:', st.route)||'').trim(); if(!nm){ res({ok:false,error:'cancel'}); return; }
       SB.from('routes').insert({user_id:USER.id,name:nm,route:st.route,aircraft:st.aircraft||{}}).then(function(r){
         if(r.error){ res({ok:false,error:r.error.message}); } else { if(pan.classList.contains('open')) listRoutes(); res({ok:true,name:nm}); } });
+    }); };
+    // Log a completed briefing + its metered usage to Supabase (works for anon via a per-device client_id).
+    // The briefing_id is generated client-side so no RETURNING/SELECT is needed (anon has insert-only rights).
+    // payload: { route_text, waypoint_count, aircraft_reg, usage: { <service_code>: quantity, ... } }
+    window.PW_logBriefing=function(payload){ return new Promise(function(res){
+      try{
+        if(!SB){ res({ok:false,error:'offline'}); return; }
+        payload=payload||{};
+        var bid=uuid();
+        var brief={ briefing_id: bid, user_id: USER?USER.id:null, client_id: clientId(),
+          route_text: payload.route_text||null, waypoint_count: payload.waypoint_count||null, aircraft_reg: payload.aircraft_reg||null };
+        SB.from('briefing').insert(brief).then(function(r){
+          if(r.error){ res({ok:false,error:r.error.message}); return; }
+          var u=payload.usage||{}, want=Object.keys(u).filter(function(c){ return isFinite(+u[c]) && +u[c]>0; });
+          if(!want.length){ res({ok:true,briefing_id:bid,usage:0}); return; }
+          SB.from('cost_service').select('service_id,code').then(function(sr){   // anon may read the meter list
+            var map={}; (sr.data||[]).forEach(function(s){ map[s.code]=s.service_id; });
+            var ins=want.filter(function(c){ return map[c]!=null; }).map(function(c){ return {briefing_id:bid,service_id:map[c],quantity:+u[c]}; });
+            if(!ins.length){ res({ok:true,briefing_id:bid,usage:0}); return; }
+            SB.from('briefing_usage').insert(ins).then(function(ur){ res({ok:!ur.error,briefing_id:bid,usage:ins.length,error:ur.error&&ur.error.message}); });
+          });
+        });
+      }catch(e){ res({ok:false,error:String(e.message||e)}); }
     }); };
     // A password-recovery link lands here with type=recovery in the URL (hash or query).
     var wantRecovery=(location.hash+' '+location.search).indexOf('type=recovery')>=0;
