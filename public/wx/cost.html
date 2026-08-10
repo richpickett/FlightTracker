@@ -52,7 +52,10 @@
 <div class="wrap">
   <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px">
     <div><h1>Briefing Cost Report</h1><div class="sub">Personal Wings · what each briefing costs us to produce</div></div>
-    <div id="who" class="sub"></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button id="csv" class="sec" style="display:none">Export CSV</button>
+      <div id="who" class="sub"></div>
+    </div>
   </div>
 
   <div id="gate" class="card" style="display:none">
@@ -142,9 +145,10 @@ function loadAll(){
   Promise.all([
     SB.from('v_cost_by_month').select('*'),
     SB.from('v_cost_by_service').select('*'),
-    SB.from('v_cost_by_user').select('*')
+    SB.from('v_cost_by_user').select('*'),
+    SB.from('v_cost_rolling30').select('*')
   ]).then(function(res){
-    var months=(res[0].data||[]), svc=(res[1].data||[]), users=(res[2].data||[]);
+    var months=(res[0].data||[]), svc=(res[1].data||[]), users=(res[2].data||[]), roll=((res[3]&&res[3].data)||[])[0];
     if(res[0].error){ $('gate').style.display='block'; $('gmsg').textContent='Signed in, but no access to reports — is this account an admin? ('+res[0].error.message+')'; }
     // KPIs
     var total=0,count=0; months.forEach(function(m){ total+=+m.total_usd; count+=+m.briefings; });
@@ -152,10 +156,8 @@ function loadAll(){
     $('k-count').textContent=count.toLocaleString();
     $('k-total').textContent=fmt(total);
     $('k-avg').textContent=fmt4(DATA.avg);
-    // last 30d from month view is coarse; approximate with current month
-    var now=new Date(), thisMonth=months.filter(function(m){ var d=new Date(m.month); return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth(); });
-    var c30=thisMonth.reduce(function(a,m){return a+ +m.total_usd;},0), n30=thisMonth.reduce(function(a,m){return a+ +m.briefings;},0);
-    $('k-30').textContent=fmt(c30); $('k-30-f').textContent=n30+' briefings (this month)';
+    // rolling 30 days (true window, from v_cost_rolling30)
+    $('k-30').textContent=fmt(roll?roll.total_usd:0); $('k-30-f').textContent=(roll?roll.briefings:0)+' briefings (30 days)';
     $('k-count-f').textContent=(users.length)+' users';
     // monthly chart
     barChart($('ch-month'), months, function(m){return monthKey(m.month);}, function(m){return +m.total_usd;},
@@ -188,7 +190,17 @@ function recalc(){
 }
 ['p-brief','p-sub','p-vol'].forEach(function(id){ document.addEventListener('input',function(e){ if(e.target&&e.target.id===id) recalc(); }); });
 
-function showApp(u){ $('gate').style.display='none'; $('app').style.display='block'; $('who').textContent=u?u.email:''; loadAll(); }
+function csvCell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+function exportCSV(){
+  SB.from('v_briefing_cost').select('occurred_at,user_id,client_id,aircraft_reg,route_text,total_usd').order('occurred_at',{ascending:false}).then(function(r){
+    var rows=r.data||[]; var head=['occurred_at','who','aircraft_reg','route_text','total_usd'];
+    var lines=[head.join(',')];
+    rows.forEach(function(x){ lines.push([x.occurred_at, x.user_id||('anon:'+(x.client_id||'')), x.aircraft_reg||'', x.route_text||'', x.total_usd].map(csvCell).join(',')); });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv'}), url=URL.createObjectURL(blob);
+    var a=document.createElement('a'); a.href=url; a.download='pw-briefing-costs.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+}
+function showApp(u){ $('gate').style.display='none'; $('app').style.display='block'; $('who').textContent=u?u.email:''; var cb=$('csv'); if(cb){ cb.style.display='inline-block'; cb.onclick=exportCSV; } loadAll(); }
 function showGate(m){ $('app').style.display='none'; $('gate').style.display='block'; if(m)$('gmsg').textContent=m; }
 
 $('btnin').onclick=function(){ var e=$('em').value.trim(), p=$('pw').value;

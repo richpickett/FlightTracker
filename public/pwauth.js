@@ -195,8 +195,8 @@
       cfg=j||{};
       if(!cfg.supabaseUrl||!window.supabase){ TRIG.textContent='👤 Account (offline)'; return; }
       SB=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
-      SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); if(wantRecovery){ startRecovery(); } else { render(); } if(USER) fetchProfile(); });
-      SB.auth.onAuthStateChange(function(ev,sess){ USER=sess?sess.user:null; upd(); if(ev==='PASSWORD_RECOVERY'){ startRecovery(); } else if(!RECOVERY){ render(); } if(USER) fetchProfile(); });
+      SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); if(wantRecovery){ startRecovery(); } else { render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER) fetchProfile(); });
+      SB.auth.onAuthStateChange(function(ev,sess){ USER=sess?sess.user:null; upd(); if(ev==='PASSWORD_RECOVERY'){ startRecovery(); } else if(!RECOVERY){ render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER) fetchProfile(); });
     }).catch(function(){ TRIG.textContent='👤 Account (offline)'; });
   }
   function upd(){ if(TRIG) TRIG.textContent= USER ? ('◉ '+((USER.user_metadata&&USER.user_metadata.name||USER.email).split('@')[0])) : '👤 Sign in'; }
