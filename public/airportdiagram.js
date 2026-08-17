@@ -243,6 +243,7 @@
     panel.innerHTML=
       '<div style="padding:10px 14px;border-bottom:1px solid #e5e9ee;display:flex;align-items:center;gap:10px;font:600 14px sans-serif;color:#1b2733">'
       +'<span>'+esc(icao)+' — Airport Diagram <span id="pwd-src" style="color:#8a97a5;font-weight:500">· loading…</span></span>'
+      +'<button id="pwd-toggle" style="display:none;margin-left:auto;font-size:12px;background:#eef2f5;border:1px solid #d3dbe3;border-radius:6px;padding:4px 10px;cursor:pointer;color:#2f6fed;font-weight:600"></button>'
       +'<a id="pwd-faa" href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="margin-left:auto;font-size:12px;color:#2f6fed;text-decoration:none">Official FAA diagram ↗</a>'
       +'<button id="pwd-x" style="border:0;background:#eef2f5;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:16px;color:#33414f">✕</button></div>'
       +'<div id="pwd-map" style="flex:1;background:#f4f6f8;position:relative"></div>'
@@ -259,6 +260,9 @@
     var CB='&_='+(new Date().getTime());
     var RED='#d61f26', AMBER='#e8871e';
     var mapHost=panel.querySelector('#pwd-map'), foot=panel.querySelector('#pwd-foot'), srcLbl=panel.querySelector('#pwd-src'), curMap=null;
+    var faaUrl=null, curView=null, toggleBtn=panel.querySelector('#pwd-toggle');
+    function updateToggle(v){ if(!toggleBtn) return; if(!faaUrl){ toggleBtn.style.display='none'; return; } toggleBtn.style.display=''; toggleBtn.textContent=(v==='faa')?'▤ Show on map':'■ FAA chart'; }
+    if(toggleBtn) toggleBtn.onclick=function(){ if(curView==='faa') renderOsm(); else if(faaUrl) renderFaa(faaUrl); };
     if(!document.getElementById('pw-spin-style')){ var st=document.createElement('style'); st.id='pw-spin-style'; st.textContent='@keyframes pwspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
     function cleanup(){ if(curMap){ try{ curMap.remove(); }catch(e){} curMap=null; } try{ if(mapHost._leaflet_id) delete mapHost._leaflet_id; }catch(e){} mapHost.innerHTML=''; }
     function showLoading(msg){ mapHost.innerHTML='<div id="pwd-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:#5a6773;font:13px sans-serif;background:#f4f6f8;z-index:5"><span style="width:15px;height:15px;border:2px solid #c9d2db;border-top-color:#2f6fed;border-radius:50%;display:inline-block;animation:pwspin .8s linear infinite"></span> '+msg+'</div>'; }
@@ -288,7 +292,7 @@
       document.head.appendChild(s);
     }
     function renderFaa(pdfUrl){
-      cleanup(); showLoading('Loading official FAA airport diagram…'); setSrc('· FAA chart');
+      cleanup(); showLoading('Loading official FAA airport diagram…'); setSrc('· FAA chart'); curView='faa'; updateToggle('faa');
       loadPdfJs(function(lib){
         if(!lib) return renderOsm();
         fetch('/.netlify/functions/chartpdf?u='+encodeURIComponent(pdfUrl)+CB).then(function(r){ if(!r.ok) throw 0; return r.arrayBuffer(); })
@@ -314,7 +318,7 @@
     }
     // ----- Fallback: OSM geometry, closures pinpointed in red (used for no-FAA fields, or if the chart fails) -----
     function renderOsm(){
-      cleanup(); showLoading('Building airport diagram (OSM)…'); setSrc('· OSM · closures highlighted');
+      cleanup(); showLoading('Building airport diagram (OSM)…'); setSrc('· OSM · closures highlighted'); curView='osm'; updateToggle('osm');
       var map=L.map(mapHost,{zoomControl:false,attributionControl:false}); curMap=map;
       L.control.zoom({position:'topright'}).addTo(map);
       map.setView([data.lat,data.lon],14);
@@ -369,7 +373,7 @@
     showLoading('Loading airport diagram…');
     fetch('/.netlify/functions/airportchart?icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(ch){
       var a=panel.querySelector('#pwd-faa');
-      if(ch && ch.diagram && ch.diagram.url){ if(a) a.href='/.netlify/functions/chartpdf?u='+encodeURIComponent(ch.diagram.url); renderFaa(ch.diagram.url); }
+      if(ch && ch.diagram && ch.diagram.url){ faaUrl=ch.diagram.url; if(a) a.href='/.netlify/functions/chartpdf?u='+encodeURIComponent(faaUrl); renderFaa(faaUrl); }
       else renderOsm();
     }).catch(function(){ renderOsm(); });
   }
