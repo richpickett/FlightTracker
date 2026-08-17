@@ -327,7 +327,7 @@
     }
     // ----- Fallback: OSM geometry, closures pinpointed in red (used for no-FAA fields, or if the chart fails) -----
     function renderOsm(){
-      cleanup(); showLoading('Building airport diagram (OSM)…'); setSrc('· OSM · closures highlighted'); curView='osm'; updateToggle('osm');
+      cleanup(); showLoading('Building airport diagram…'); setSrc('· closures highlighted'); curView='osm'; updateToggle('osm');
       var map=L.map(mapHost,{zoomControl:false,attributionControl:false}); curMap=map;
       L.control.zoom({position:'topright'}).addTo(map);
       map.setView([data.lat,data.lon],14);
