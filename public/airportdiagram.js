@@ -284,7 +284,7 @@
     var foot=panel.querySelector('#pwd-foot');
     var lbl=function(txt,c){ return L.divIcon({className:'',html:'<span style="font:'+(c.f)+';color:'+c.color+';text-shadow:0 0 3px #fff,0 0 3px #fff">'+esc(txt)+'</span>',iconSize:c.sz}); };
     var RED='#d61f26', AMBER='#e8871e';
-    fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+CB).then(function(r){return r.json();}).then(function(geo){
+    fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
       if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){
         stopLoading();
         var mp=document.getElementById('pwd-map'); if(!mp) return;
