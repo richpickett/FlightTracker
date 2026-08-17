@@ -34,7 +34,9 @@
       blanked=blanked.slice(0,m.index)+' '.repeat(m[0].length)+blanked.slice(m.index+m[0].length);
     }
     // Pass 2 — remaining bare "TWY <id>[, id, id]" are whole-taxiway closures.
-    var cleaned=blanked.replace(/\bBTN\b[^,;.]{0,40}\bAND\b\s*(?:RWY|TWY|APCH|APPROACH)[^,;.]{0,18}/g,' ');
+    var cleaned=blanked.replace(/\bBTN\b[^,;.]{0,40}\bAND\b\s*(?:RWY|TWY|APCH|APPROACH)[^,;.]{0,18}/g,' ')
+      .replace(/\b(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST)\s+OF\s+(?:RWY|TWY)\s+[A-Z0-9\/]+/g,' ')  // "<dir> OF TWY A7" = boundary landmark, not a closure
+      .replace(/\bAT\s+(?:RWY|TWY)\s+[A-Z0-9\/]+/g,' ');                                                  // "AT TWY B" = location, not a closure
     var wRe=/\bTWY\s+([A-Z]\d?)((?:\s*,\s*[A-Z]\d?(?![A-Z0-9])){0,12})/g;
     while(m=wRe.exec(cleaned)){
       var ids=[m[1]]; if(m[2]){ (m[2].match(/[A-Z]\d?/g)||[]).forEach(function(x){ids.push(x);}); }
@@ -52,7 +54,9 @@
     var t=(text||'').toUpperCase();
     if(!/\bCLSD\b/.test(t) && !/DISPLAC/.test(t)) return [];
     if(t.length>420) t=t.slice(0,420);
-    var cleaned=t.replace(/\bBTN\b[^,;.]{0,40}\bAND\b\s*(?:RWY|TWY|APCH|APPROACH)[^,;.]{0,18}/g,' ');
+    var cleaned=t.replace(/\bBTN\b[^,;.]{0,40}\bAND\b\s*(?:RWY|TWY|APCH|APPROACH)[^,;.]{0,18}/g,' ')
+      .replace(/\bAND\s+RWY\s+\d{1,2}[LRC]?(?:\/\d{1,2}[LRC]?)?/g,' ')                                              // "...AND RWY 07L/25R" = boundary of a TWY closure
+      .replace(/\b(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST)\s+OF\s+RWY\s+\d{1,2}[LRC]?(?:\/\d{1,2}[LRC]?)?/g,' '); // "<dir> OF RWY x" = boundary
     var out=[], m, rid='(\\d{1,2}[LRC]?(?:/\\d{1,2}[LRC]?)?)';
     // displaced threshold: "RWY <end> THR DISPLACED ... <n>FT"
     var rdt=new RegExp('\\bRWY\\s+(\\d{1,2}[LRC]?)\\s+THR\\s+DISPLACED[^.]{0,30}?(\\d{2,5})\\s?FT','g');
@@ -344,7 +348,7 @@
         }
         if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 11px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[46,14]})}).addTo(g);
       });
-      if(bounds.length) map.fitBounds(bounds,{padding:[26,26]});
+      if(bounds.length) map.fitBounds(bounds,{padding:[14,14]});
       stopLoading();
       if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
     }).catch(function(){ stopLoading(); foot.insertAdjacentHTML('beforeend',' <span style="color:#c01722">— geometry error.</span>'); });
