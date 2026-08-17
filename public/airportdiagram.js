@@ -257,7 +257,7 @@
     panel.querySelector('#pwd-x').onclick=close;
     ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
 
-    var CB='&_='+(new Date().getTime());
+    var CB='&v=2';   // stable cache key (was a per-request timestamp that forced a live Overpass hit every open -> rate limits)
     var RED='#d61f26', AMBER='#e8871e';
     var mapHost=panel.querySelector('#pwd-map'), foot=panel.querySelector('#pwd-foot'), srcLbl=panel.querySelector('#pwd-src'), curMap=null;
     var faaUrl=null, curView=null, toggleBtn=panel.querySelector('#pwd-toggle');
