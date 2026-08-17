@@ -1,0 +1,158 @@
+// Personal Wings — sync FAA NMS NOTAMs into the Supabase mirror (public.notam).
+// NMS is a mirror-and-sync feed (rate-limited), so we maintain a local copy and the app
+// reads from it. This worker runs the two sync modes:
+//   ?mode=bulk         full refresh — pull each classification, upsert, prune stale rows (daily)
+//   ?mode=incremental  delta since the watermark — upsert changes (every few minutes; default)
+//   ?mode=status       counts + sync state (no writes)
+//
+// Env: NMS_HOST, NMS_CLIENT_ID, NMS_CLIENT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE.
+// Guard: NMS_SYNC_KEY — callers must pass &key=<NMS_SYNC_KEY> (keeps the endpoint private).
+// Classifications: NMS_CLASSES (default "DOMESTIC,INTERNATIONAL,FDC").
+
+const NMS_HOST = process.env.NMS_HOST || "https://api-staging.cgifederal-aim.com";
+const CID = process.env.NMS_CLIENT_ID, CSECRET = process.env.NMS_CLIENT_SECRET;
+const SB_URL = process.env.SUPABASE_URL, SB_KEY = process.env.SUPABASE_SERVICE_ROLE;
+const SYNC_KEY = process.env.NMS_SYNC_KEY;
+const CLASSES = (process.env.NMS_CLASSES || "DOMESTIC,INTERNATIONAL,FDC").split(",").map(s => s.trim()).filter(Boolean);
+
+// ---- NMS auth (token cached across warm invocations) ----
+let _tok = null, _exp = 0;
+async function token() {
+  const now = Date.now();
+  if (_tok && now < _exp - 60000) return _tok;
+  const auth = Buffer.from(CID + ":" + CSECRET).toString("base64");
+  const r = await fetch(NMS_HOST + "/v1/auth/token", {
+    method: "POST",
+    headers: { Authorization: "Basic " + auth, "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials"
+  });
+  const t = await r.text();
+  if (!r.ok) throw new Error("token " + r.status + ": " + t.slice(0, 160));
+  const j = JSON.parse(t);
+  _tok = j.access_token; _exp = now + (parseInt(j.expires_in || "1799", 10) * 1000);
+  return _tok;
+}
+async function nmsGet(path) {
+  const t = await token();
+  const r = await fetch(NMS_HOST + path, { headers: { Authorization: "Bearer " + t, nmsResponseFormat: "GEOJSON", Accept: "application/json" } });
+  const txt = await r.text();
+  if (!r.ok) throw new Error("nms " + r.status + " " + path + ": " + txt.slice(0, 200));
+  let d; try { d = JSON.parse(txt); } catch (e) { throw new Error("nms non-json " + path); }
+  return d;
+}
+// Feature list can arrive as {data:{geojson:[]}}, a FeatureCollection {features:[]}, or a bare array.
+function featuresFrom(d) {
+  if (!d) return [];
+  if (Array.isArray(d)) return d;
+  if (d.data && Array.isArray(d.data.geojson)) return d.data.geojson;
+  if (Array.isArray(d.features)) return d.features;
+  if (d.data && Array.isArray(d.data.features)) return d.data.features;
+  return [];
+}
+
+// ---- normalize an NMS GeoJSON feature -> mirror row ----
+function isoOrNull(s) { return (typeof s === "string" && /^\d{4}-\d\d-\d\dT/.test(s)) ? s : null; }
+function normalize(feature) {
+  const cd = (feature.properties && feature.properties.coreNOTAMData) || {};
+  const n = cd.notam || {};
+  let translation = "";
+  const tr = cd.notamTranslation;
+  if (Array.isArray(tr)) { const icao = tr.find(x => x && x.type === "ICAO") || tr.find(x => x && (x.formattedText || x.simpleText)); translation = icao ? (icao.formattedText || icao.simpleText || "") : ""; }
+  else if (tr) translation = tr.formattedText || tr.simpleText || "";
+  const q = (n.selectionCode || "").toUpperCase();
+  return {
+    id: n.id, number: n.number || null, location: n.location || null, icao_location: n.icaoLocation || null,
+    classification: n.classification || null,
+    q_code: q || null, q_subject: q.length >= 3 ? q.slice(1, 3) : null, q_condition: q.length >= 5 ? q.slice(3, 5) : null,
+    ntype: n.type || null, text: n.text || null, translation: translation || null,
+    effective_start: isoOrNull(n.effectiveStart), effective_end: isoOrNull(n.effectiveEnd),
+    issued: isoOrNull(n.issued), last_updated: isoOrNull(n.lastUpdated),
+    geometry: feature.geometry || null, raw: n
+  };
+}
+
+// ---- Supabase (PostgREST via service role) ----
+const SBH = { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json" };
+async function sbUpsert(rows, stamp) {
+  let done = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const chunk = rows.slice(i, i + 500).map(r => ({ ...r, synced_at: stamp }));
+    const r = await fetch(SB_URL + "/rest/v1/notam", {
+      method: "POST",
+      headers: { ...SBH, Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(chunk)
+    });
+    if (!r.ok) throw new Error("sb upsert " + r.status + ": " + (await r.text()).slice(0, 200));
+    done += chunk.length;
+  }
+  return done;
+}
+async function sbGetState() {
+  const r = await fetch(SB_URL + "/rest/v1/notam_sync?id=eq.state&select=*", { headers: SBH });
+  const a = r.ok ? await r.json() : [];
+  return (Array.isArray(a) && a[0]) || {};
+}
+async function sbSetState(patch) {
+  await fetch(SB_URL + "/rest/v1/notam_sync?id=eq.state", {
+    method: "PATCH", headers: { ...SBH, Prefer: "return=minimal" },
+    body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() })
+  });
+}
+async function sbPruneOlderThan(stamp) {
+  const r = await fetch(SB_URL + "/rest/v1/notam?synced_at=lt." + encodeURIComponent(stamp), { method: "DELETE", headers: { ...SBH, Prefer: "return=minimal" } });
+  if (!r.ok) throw new Error("sb prune " + r.status);
+}
+async function sbCount() {
+  const r = await fetch(SB_URL + "/rest/v1/notam?select=id", { method: "HEAD", headers: { ...SBH, Prefer: "count=exact", Range: "0-0" } });
+  const cr = r.headers.get("content-range") || "";
+  return cr.split("/")[1] || "?";
+}
+function maxIso(a, b) { if (!a) return b; if (!b) return a; return a > b ? a : b; }
+
+// ---- modes ----
+async function bulk() {
+  const stamp = new Date().toISOString();
+  let total = 0, watermark = null;
+  const per = {};
+  for (const cls of CLASSES) {
+    const d = await nmsGet("/nmsapi/v1/notams?classification=" + encodeURIComponent(cls));
+    const rows = featuresFrom(d).map(normalize).filter(r => r.id);
+    await sbUpsert(rows, stamp);
+    for (const r of rows) watermark = maxIso(watermark, r.last_updated);
+    per[cls] = rows.length; total += rows.length;
+  }
+  await sbPruneOlderThan(stamp);               // drop NOTAMs not present in this full refresh
+  await sbSetState({ last_bulk: stamp, last_sync: watermark, note: "bulk " + total });
+  return { mode: "bulk", total, per, watermark };
+}
+async function incremental() {
+  const st = await sbGetState();
+  const since = st.last_sync || new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const d = await nmsGet("/nmsapi/v1/notams?lastUpdatedDate=" + encodeURIComponent(since));
+  const rows = featuresFrom(d).map(normalize).filter(r => r.id);
+  const stamp = new Date().toISOString();
+  if (rows.length) await sbUpsert(rows, stamp);
+  let watermark = since;
+  for (const r of rows) watermark = maxIso(watermark, r.last_updated);
+  await sbSetState({ last_sync: watermark, note: "incr " + rows.length });
+  return { mode: "incremental", since, changed: rows.length, watermark };
+}
+
+exports.handler = async (event) => {
+  const H = { "Content-Type": "application/json", "Cache-Control": "no-store" };
+  const J = (c, o) => ({ statusCode: c, headers: H, body: JSON.stringify(o, null, 1) });
+  const q = (event && event.queryStringParameters) || {};
+  if (!CID || !CSECRET) return J(200, { error: "NMS creds not set" });
+  if (!SB_URL || !SB_KEY) return J(200, { error: "Supabase env not set" });
+  // Guard: HTTP callers must present the key. (A scheduled invocation with no key is allowed.)
+  const scheduled = !event.httpMethod;
+  if (!scheduled && SYNC_KEY && q.key !== SYNC_KEY) return J(403, { error: "forbidden" });
+  const mode = (q.mode || "incremental").toLowerCase();
+  try {
+    if (mode === "status") return J(200, { mode: "status", rows: await sbCount(), state: await sbGetState(), classes: CLASSES, host: NMS_HOST });
+    if (mode === "bulk") return J(200, await bulk());
+    return J(200, await incremental());
+  } catch (e) {
+    return J(200, { error: String(e.message || e), mode });
+  }
+};
