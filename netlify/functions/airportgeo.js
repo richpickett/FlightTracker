@@ -24,18 +24,22 @@ exports.handler = async (event) => {
 
   // Fetch the movement features AND the aerodrome polygons in the box (the latter used only to filter).
   const query = `[out:json][timeout:20];(way["aeroway"~"taxiway|runway|apron"](${S},${W},${N},${E});way["aeroway"="aerodrome"](${S},${W},${N},${E});relation["aeroway"="aerodrome"](${S},${W},${N},${E}););out tags geom;`;
-  const MIRRORS = ["https://overpass.kumi.systems/api/interpreter","https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
+  const MIRRORS = ["https://maps.mail.ru/osm/tools/overpass/api/interpreter","https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter","https://overpass.private.coffee/api/interpreter","https://overpass.osm.jp/api/interpreter"];
 
-  const fetchTimeout = (url, ms) => {
+  const attempt = (url, ms) => {
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), ms);
     return fetch(url, { method: "POST", body: "data=" + encodeURIComponent(query), headers: { "Content-Type": "application/x-www-form-urlencoded" }, signal: ctl.signal })
-      .then(r => r.ok ? r.text() : null).finally(() => clearTimeout(to));
+      .then(r => r.ok ? r.text() : Promise.reject(new Error("http " + r.status)))
+      .then(txt => { if (txt && txt.charAt(0) === "{") return JSON.parse(txt); throw new Error("bad body"); })
+      .finally(() => clearTimeout(to));
   };
 
+  // Race all mirrors concurrently and take the first valid response. Sequential
+  // fallback can't work inside Netlify's ~10s function budget: at 9s per attempt,
+  // one hung mirror kills the whole function before the next is tried. Racing
+  // fails over within a single budget no matter which subset of mirrors is down.
   let data = null;
-  for (const m of MIRRORS) {
-    try { const txt = await fetchTimeout(m, 9000); if (txt && txt.charAt(0) === "{") { data = JSON.parse(txt); break; } } catch (e) {}
-  }
+  try { data = await Promise.any(MIRRORS.map(m => attempt(m, 9000))); } catch (e) { data = null; }
   if (!data) return { statusCode: 200, headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ error: "overpass unavailable", runways: [], taxiways: [], aprons: [] }) };
 
   const r5 = c => [Math.round(c.lat * 1e5) / 1e5, Math.round(c.lon * 1e5) / 1e5];
