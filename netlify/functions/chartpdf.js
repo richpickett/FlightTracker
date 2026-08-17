@@ -19,7 +19,7 @@ exports.handler = async (event) => {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": "inline",
-        "Cache-Control": "public, max-age=21600",
+        "Cache-Control": "public, max-age=2592000",
         "Access-Control-Allow-Origin": "*"
         // deliberately no X-Frame-Options -> embeddable in our modal
       },

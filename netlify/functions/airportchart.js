@@ -5,7 +5,7 @@ const HOST = "skylink-api.p.rapidapi.com";
 
 exports.handler = async (event) => {
   const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,OPTIONS" };
-  const okHdr = { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" };
+  const okHdr = { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=86400" };
   const errHdr = { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" };
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS };
   const q = event.queryStringParameters || {};
