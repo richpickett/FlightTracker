@@ -242,7 +242,7 @@
     panel.style.cssText='background:#fff;border-radius:12px;width:min(1000px,96vw);height:min(760px,94vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.4)';
     panel.innerHTML=
       '<div style="padding:10px 14px;border-bottom:1px solid #e5e9ee;display:flex;align-items:center;gap:10px;font:600 14px sans-serif;color:#1b2733">'
-      +'<span>'+esc(icao)+' — Airport Diagram <span style="color:#8a97a5;font-weight:500">· OSM · closures highlighted</span></span>'
+      +'<span>'+esc(icao)+' — Airport Diagram <span id="pwd-src" style="color:#8a97a5;font-weight:500">· loading…</span></span>'
       +'<a id="pwd-faa" href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="margin-left:auto;font-size:12px;color:#2f6fed;text-decoration:none">Official FAA diagram ↗</a>'
       +'<button id="pwd-x" style="border:0;background:#eef2f5;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:16px;color:#33414f">✕</button></div>'
       +'<div id="pwd-map" style="flex:1;background:#f4f6f8;position:relative"></div>'
@@ -257,101 +257,121 @@
     ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
 
     var CB='&_='+(new Date().getTime());
-    fetch('/.netlify/functions/airportchart?icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(ch){
-      if(ch&&ch.diagram&&ch.diagram.url){ var a=panel.querySelector('#pwd-faa'); if(a){ a.href='/.netlify/functions/chartpdf?u='+encodeURIComponent(ch.diagram.url); a.textContent='Official FAA diagram ↗'; } }
-    }).catch(function(){});
-
-    // "Building…" state so the modal never opens blank while OSM geometry loads.
-    if(!document.getElementById('pw-spin-style')){ var st=document.createElement('style'); st.id='pw-spin-style'; st.textContent='@keyframes pwspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
-    var loadEl=document.createElement('div'); loadEl.id='pwd-loading';
-    loadEl.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:#5a6773;font:13px sans-serif;background:#f4f6f8;z-index:5';
-    loadEl.innerHTML='<span style="width:15px;height:15px;border:2px solid #c9d2db;border-top-color:#2f6fed;border-radius:50%;display:inline-block;animation:pwspin .8s linear infinite"></span> Building airport diagram…';
-    panel.querySelector('#pwd-map').appendChild(loadEl);
-    function stopLoading(){ var e=document.getElementById('pwd-loading'); if(e&&e.parentNode) e.parentNode.removeChild(e); }
-
-    // On-map legend (readable, dense).
-    function legRow(color,dash,label){ return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0">'
-      +'<span style="display:inline-block;width:26px;height:0;border-top:5px '+(dash?'dashed':'solid')+' '+color+'"></span>'
-      +'<span>'+label+'</span></div>'; }
-    var legEl=document.createElement('div');
-    legEl.style.cssText='position:absolute;left:10px;bottom:10px;z-index:6;background:rgba(255,255,255,.95);border:1px solid #cdd6df;border-radius:9px;padding:9px 13px;font:600 14px/1.35 sans-serif;color:#26313c;box-shadow:0 2px 10px rgba(0,0,0,.22)';
-    legEl.innerHTML='<div style="font-weight:800;font-size:14px;margin-bottom:5px">Closures</div>'
-      +legRow('#d61f26',false,'Closed (RWY / TWY)')
-      +legRow('#e8871e',false,'Closed portion / displaced')
-      +legRow('#d61f26',true,'Taxi / crossing only');
-    panel.querySelector('#pwd-map').appendChild(legEl);
-
-    var map=L.map('pwd-map',{zoomControl:true,attributionControl:false});
-    map.setView([data.lat,data.lon],14);
-    setTimeout(function(){ map.invalidateSize(); },80);
-    var g=L.layerGroup().addTo(map);
-    var foot=panel.querySelector('#pwd-foot');
-    var lbl=function(txt,c){ return L.divIcon({className:'',html:'<span style="font:'+(c.f)+';color:'+c.color+';text-shadow:0 0 3px #fff,0 0 3px #fff">'+esc(txt)+'</span>',iconSize:c.sz}); };
     var RED='#d61f26', AMBER='#e8871e';
-    fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
-      if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){
-        stopLoading();
-        var mp=document.getElementById('pwd-map'); if(!mp) return;
-        var bannerBits=(rk.length?'Closed runways: '+esc(rwStr)+' · ':'')+'Closed taxiways: '+esc(cl.join(', ')||'none');
-        var closedBanner='<div style="padding:6px 12px;background:#fff5f5;color:#c01722;font:700 13px sans-serif;border-bottom:1px solid #f0d0d0">'+bannerBits+'</div>';
-        var linkFallback='<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;color:#5a6773;font:13px sans-serif;padding:24px"><div>Diagram is unavailable right now (OSM &amp; chart service).</div><div style="font-size:15px"><b style="color:#c01722">'+bannerBits+'</b></div><a href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="background:#2f6fed;color:#fff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600">Open official airport diagram ↗</a></div>';
-        mp.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#5a6773;font:13px sans-serif">Loading official FAA airport diagram…</div>';
-        fetch('/.netlify/functions/airportchart?icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(ch){
-          if(ch && ch.diagram && ch.diagram.url){ mp.innerHTML=closedBanner+'<iframe src="/.netlify/functions/chartpdf?u='+encodeURIComponent(ch.diagram.url)+'" style="width:100%;height:calc(100% - 34px);border:0" title="airport diagram"></iframe>'; }
-          else { mp.innerHTML=linkFallback; }
-        }).catch(function(){ mp.innerHTML=linkFallback; });
-        return;
-      }
-      var bounds=[], notLocated=[];
-      (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#d7dee6',weight:1,fillColor:'#e7ecf1',fillOpacity:.7,interactive:false}).addTo(g); });
-      // Base taxiways (gray) + labels
-      (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
-        L.polyline(tw.c,{color:'#9aa7b4',weight:2,opacity:.9,interactive:false}).addTo(g);
-        if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 10px sans-serif',color:'#3a4756',sz:[18,12]})}).addTo(g); }
+    var mapHost=panel.querySelector('#pwd-map'), foot=panel.querySelector('#pwd-foot'), srcLbl=panel.querySelector('#pwd-src'), curMap=null;
+    if(!document.getElementById('pw-spin-style')){ var st=document.createElement('style'); st.id='pw-spin-style'; st.textContent='@keyframes pwspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
+    function cleanup(){ if(curMap){ try{ curMap.remove(); }catch(e){} curMap=null; } try{ if(mapHost._leaflet_id) delete mapHost._leaflet_id; }catch(e){} mapHost.innerHTML=''; }
+    function showLoading(msg){ mapHost.innerHTML='<div id="pwd-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:#5a6773;font:13px sans-serif;background:#f4f6f8;z-index:5"><span style="width:15px;height:15px;border:2px solid #c9d2db;border-top-color:#2f6fed;border-radius:50%;display:inline-block;animation:pwspin .8s linear infinite"></span> '+msg+'</div>'; }
+    function stopLoading(){ var e=document.getElementById('pwd-loading'); if(e&&e.parentNode) e.parentNode.removeChild(e); }
+    function setSrc(t){ if(srcLbl) srcLbl.textContent=t; }
+    // Prominent closures panel, drawn over whichever diagram source renders (satisfies "closures on the diagram").
+    function closuresPanel(){
+      if(document.getElementById('pwd-clos')) return;
+      var d=document.createElement('div'); d.id='pwd-clos';
+      d.style.cssText='position:absolute;left:10px;top:10px;z-index:1200;max-width:min(360px,66%);background:rgba(255,255,255,.96);border:1px solid #e0b6b6;border-left:5px solid '+RED+';border-radius:9px;padding:9px 12px;font:600 13px/1.45 sans-serif;color:#26313c;box-shadow:0 2px 12px rgba(0,0,0,.22)';
+      var h='<div style="font-weight:800;margin-bottom:3px">NOTAM closures — today</div>';
+      if(rk.length) h+='<div><span style="color:'+RED+';font-weight:800">RWY:</span> '+esc(rwStr)+'</div>';
+      h+='<div><span style="color:'+RED+';font-weight:800">TWY:</span> '+(cl.length?esc(cl.join(', ')):'<span style="color:#2f7a45">none active</span>')+'</div>';
+      if(schedStr) h+='<div style="color:#8a6d1b;margin-top:3px"><b>Scheduled (not active '+DOW[NOWDOW]+'):</b> '+esc(schedStr)+'</div>';
+      d.innerHTML=h; mapHost.appendChild(d);
+    }
+    function linkFallback(msg){ cleanup();
+      mapHost.innerHTML='<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;color:#5a6773;font:13px sans-serif;padding:24px"><div>'+msg+'</div><a href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="background:#2f6fed;color:#fff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600">Open official airport diagram ↗</a></div>';
+      closuresPanel();
+    }
+    // ----- Preferred: official FAA diagram, rendered clean via PDF.js (no browser PDF chrome) -----
+    function loadPdfJs(cb){
+      if(w.pdfjsLib) return cb(w.pdfjsLib);
+      var s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+      s.onload=function(){ try{ if(w.pdfjsLib) w.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; }catch(e){} cb(w.pdfjsLib||null); };
+      s.onerror=function(){ cb(null); };
+      document.head.appendChild(s);
+    }
+    function renderFaa(pdfUrl){
+      cleanup(); showLoading('Loading official FAA airport diagram…'); setSrc('· FAA chart');
+      loadPdfJs(function(lib){
+        if(!lib) return renderOsm();
+        fetch('/.netlify/functions/chartpdf?u='+encodeURIComponent(pdfUrl)+CB).then(function(r){ if(!r.ok) throw 0; return r.arrayBuffer(); })
+          .then(function(buf){ return lib.getDocument({data:new Uint8Array(buf)}).promise; })
+          .then(function(pdf){ return pdf.getPage(1); })
+          .then(function(page){
+            var v1=page.getViewport({scale:1}), scale=Math.min(3.2,Math.max(1.6,2400/Math.max(v1.width,v1.height)));
+            var vp=page.getViewport({scale:scale}), canvas=document.createElement('canvas');
+            canvas.width=Math.round(vp.width); canvas.height=Math.round(vp.height);
+            return page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise.then(function(){ return canvas; });
+          })
+          .then(function(canvas){
+            cleanup();
+            var m2=L.map(mapHost,{crs:L.CRS.Simple,zoomControl:false,attributionControl:false,minZoom:-5,maxZoom:4,zoomSnap:.25}); curMap=m2;
+            L.control.zoom({position:'topright'}).addTo(m2);
+            var bounds=[[0,0],[canvas.height,canvas.width]];
+            L.imageOverlay(canvas.toDataURL('image/png'),bounds).addTo(m2);
+            m2.fitBounds(bounds); setTimeout(function(){ try{ m2.invalidateSize(); m2.fitBounds(bounds); }catch(e){} },60);
+            setSrc('· FAA chart · closures listed'); closuresPanel();
+          })
+          .catch(function(){ renderOsm(); });
       });
-      // Closed taxiways: clip each clause to its boundaries; whole-close if no BTN or clip fails.
-      cl.forEach(function(id){
-        var clauses=twClauses[id], drewSomething=false, whole=clauses.some(function(c){return !c.from||!c.to;});
-        var S=mergeWays(twWays(geo,id));
-        if(!whole){
-          clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c);
+    }
+    // ----- Fallback: OSM geometry, closures pinpointed in red (used for no-FAA fields, or if the chart fails) -----
+    function renderOsm(){
+      cleanup(); showLoading('Building airport diagram (OSM)…'); setSrc('· OSM · closures highlighted');
+      var map=L.map(mapHost,{zoomControl:false,attributionControl:false}); curMap=map;
+      L.control.zoom({position:'topright'}).addTo(map);
+      map.setView([data.lat,data.lon],14);
+      setTimeout(function(){ try{ map.invalidateSize(); }catch(e){} },80);
+      var g=L.layerGroup().addTo(map);
+      var lbl=function(txt,c){ return L.divIcon({className:'',html:'<span style="font:'+(c.f)+';color:'+c.color+';text-shadow:0 0 3px #fff,0 0 3px #fff">'+esc(txt)+'</span>',iconSize:c.sz}); };
+      var legEl=document.createElement('div');
+      legEl.style.cssText='position:absolute;left:10px;bottom:10px;z-index:1200;background:rgba(255,255,255,.95);border:1px solid #cdd6df;border-radius:9px;padding:9px 13px;font:600 14px/1.35 sans-serif;color:#26313c;box-shadow:0 2px 10px rgba(0,0,0,.22)';
+      function legRow(color,dash,label){ return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="display:inline-block;width:26px;height:0;border-top:5px '+(dash?'dashed':'solid')+' '+color+'"></span><span>'+label+'</span></div>'; }
+      legEl.innerHTML='<div style="font-weight:800;font-size:14px;margin-bottom:5px">Closures</div>'+legRow(RED,false,'Closed (RWY / TWY)')+legRow(AMBER,false,'Closed portion / displaced')+legRow(RED,true,'Taxi / crossing only');
+      mapHost.appendChild(legEl);
+      fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
+        if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){ linkFallback('Airport diagram is unavailable right now (OSM &amp; FAA chart service).'); return; }
+        var bounds=[], notLocated=[];
+        (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#d7dee6',weight:1,fillColor:'#e7ecf1',fillOpacity:.7,interactive:false}).addTo(g); });
+        (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
+          L.polyline(tw.c,{color:'#9aa7b4',weight:2,opacity:.9,interactive:false}).addTo(g);
+          if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 10px sans-serif',color:'#3a4756',sz:[18,12]})}).addTo(g); }
+        });
+        cl.forEach(function(id){
+          var clauses=twClauses[id], drewSomething=false, whole=clauses.some(function(c){return !c.from||!c.to;});
+          var S=mergeWays(twWays(geo,id));
+          if(!whole){ clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c);
             if(seg){ L.polyline(seg,{color:RED,weight:6,opacity:.97,interactive:false}).addTo(g);
-                     L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } });
-        }
-        if((whole || !drewSomething) && S.length>1){ // whole closure, or clip failed -> highlight full taxiway
-          L.polyline(S,{color:RED,weight:5,opacity:.95,interactive:false}).addTo(g);
-          L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g);
-          drewSomething=true;
-        }
-        if(!drewSomething) notLocated.push('TWY '+id);
-      });
-      // Runways: base gray, then closure styling.
-      (geo.runways||[]).forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
-        var ref=normRwy(rw.ref), rc=closedR[ref] || (function(){ // also match single-end displaced/closures
-          for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })) return closedR[k]; } return null; })();
-        L.polyline(rw.c,{color:'#33414f',weight:8,opacity:.95,interactive:false}).addTo(g);
-        if(rc){
-          if(rc.kind==='partial' || rc.kind==='displaced'){
-            var portion=closedPortion(rw.c, rc);
-            if(portion){ var col=rc.kind==='displaced'?AMBER:AMBER;
-              L.polyline(portion,{color:col,weight:9,opacity:.97,interactive:false}).addTo(g);
-              L.polyline(portion,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g);
-              if(rc.kind==='displaced'){ var thr=portion[portion.length-1]; L.circleMarker(thr,{radius:5,color:'#fff',weight:2,fillColor:AMBER,fillOpacity:1,interactive:false}).addTo(g); }
-            } else { L.polyline(rw.c,{color:AMBER,weight:9,opacity:.9,interactive:false}).addTo(g); }
-          } else if(rc.taxiExc || rc.xngExc){
-            // Closed to ops but taxi/crossing permitted -> dashed red (not a solid full closure).
-            L.polyline(rw.c,{color:RED,weight:6,opacity:.95,dashArray:'14 10',interactive:false}).addTo(g);
-          } else {
-            L.polyline(rw.c,{color:RED,weight:9,opacity:.96,interactive:false}).addTo(g);
-            L.polyline(rw.c,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g);
+                     L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } }); }
+          if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:RED,weight:5,opacity:.95,interactive:false}).addTo(g);
+            L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
+          if(!drewSomething) notLocated.push('TWY '+id);
+        });
+        (geo.runways||[]).forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
+          var ref=normRwy(rw.ref), rc=closedR[ref] || (function(){ for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })) return closedR[k]; } return null; })();
+          L.polyline(rw.c,{color:'#33414f',weight:8,opacity:.95,interactive:false}).addTo(g);
+          if(rc){
+            if(rc.kind==='partial' || rc.kind==='displaced'){
+              var portion=closedPortion(rw.c, rc);
+              if(portion){ L.polyline(portion,{color:AMBER,weight:9,opacity:.97,interactive:false}).addTo(g);
+                L.polyline(portion,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g);
+                if(rc.kind==='displaced'){ var thr=portion[portion.length-1]; L.circleMarker(thr,{radius:5,color:'#fff',weight:2,fillColor:AMBER,fillOpacity:1,interactive:false}).addTo(g); }
+              } else { L.polyline(rw.c,{color:AMBER,weight:9,opacity:.9,interactive:false}).addTo(g); }
+            } else if(rc.taxiExc || rc.xngExc){ L.polyline(rw.c,{color:RED,weight:6,opacity:.95,dashArray:'14 10',interactive:false}).addTo(g); }
+            else { L.polyline(rw.c,{color:RED,weight:9,opacity:.96,interactive:false}).addTo(g);
+              L.polyline(rw.c,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g); }
           }
-        }
-        if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 11px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[46,14]})}).addTo(g);
-      });
-      if(bounds.length) map.fitBounds(bounds,{padding:[14,14]});
-      stopLoading();
-      if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
-    }).catch(function(){ stopLoading(); foot.insertAdjacentHTML('beforeend',' <span style="color:#c01722">— geometry error.</span>'); });
+          if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 11px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[46,14]})}).addTo(g);
+        });
+        if(bounds.length) map.fitBounds(bounds,{padding:[14,14]});
+        stopLoading(); closuresPanel();
+        if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
+      }).catch(function(){ linkFallback('Airport diagram is unavailable right now.'); });
+    }
+    // Kick off: FAA preferred; OSM fallback when there's no FAA diagram (e.g. KDIJ) or the chart fails.
+    showLoading('Loading airport diagram…');
+    fetch('/.netlify/functions/airportchart?icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(ch){
+      var a=panel.querySelector('#pwd-faa');
+      if(ch && ch.diagram && ch.diagram.url){ if(a) a.href='/.netlify/functions/chartpdf?u='+encodeURIComponent(ch.diagram.url); renderFaa(ch.diagram.url); }
+      else renderOsm();
+    }).catch(function(){ renderOsm(); });
   }
   w.PWDiagram = { open: open, _closedTwySegs: closedTwySegs, _closedTwyIds: closedTwyIds, _closedRwys: closedRwys,
                   _taxiwaySegment: taxiwaySegment, _closedPortion: closedPortion, _mergeWays: mergeWays, _polyLenFt: polyLenFt, _rwWays: rwWays, _twWays: twWays,
