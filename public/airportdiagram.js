@@ -280,6 +280,15 @@
       d.innerHTML=h; mapHost.appendChild(d);
     }
     function linkFallback(msg){ cleanup();
+      // If we have the official FAA diagram in hand, offer it directly (one click, in-app) instead of
+      // punting to an external site. Only fields with no published FAA diagram (e.g. KDIJ) fall through
+      // to the external airport-info link.
+      if(faaUrl){
+        mapHost.innerHTML='<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;color:#5a6773;font:13px sans-serif;padding:24px"><div>OSM base map is unavailable right now.</div><button id="pwd-back-faa" style="background:#2f6fed;color:#fff;padding:9px 16px;border:0;border-radius:8px;cursor:pointer;font-weight:600">■ Show FAA airport diagram</button></div>';
+        closuresPanel();
+        var bf=document.getElementById('pwd-back-faa'); if(bf) bf.onclick=function(){ renderFaa(faaUrl); };
+        return;
+      }
       mapHost.innerHTML='<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;color:#5a6773;font:13px sans-serif;padding:24px"><div>'+msg+'</div><a href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="background:#2f6fed;color:#fff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600">Open official airport diagram ↗</a></div>';
       closuresPanel();
     }

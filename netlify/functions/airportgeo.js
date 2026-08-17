@@ -8,6 +8,32 @@
 // GET /.netlify/functions/airportgeo?lat=32.7336&lon=-117.1897&icao=KSAN   (or &bbox=w,s,e,n)
 //   -> { runways:[{ref,c:[[lat,lon]...]}], taxiways:[{ref,c}], aprons:[{c}] }
 
+// ---- Persistent geometry cache (Supabase). Populated on the first successful Overpass fetch per airport;
+// served thereafter without touching Overpass until 60 days old. Ends the dependency on Overpass uptime.
+const SB_URL = process.env.SUPABASE_URL;
+const SB_KEY = process.env.SUPABASE_SERVICE_ROLE;
+const GEO_TTL_MS = 5184000 * 1000; // 60 days — matches the CDN cache window
+
+async function cacheRead(icao) {
+  if (!SB_URL || !SB_KEY || !icao) return null;
+  try {
+    const r = await fetch(SB_URL + "/rest/v1/airport_geo?select=data,fetched_at&icao=eq." + encodeURIComponent(icao),
+      { headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY } });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return (Array.isArray(rows) && rows.length) ? rows[0] : null;
+  } catch (e) { return null; }
+}
+async function cacheWrite(icao, data) {
+  if (!SB_URL || !SB_KEY || !icao) return;
+  try {
+    await fetch(SB_URL + "/rest/v1/airport_geo",
+      { method: "POST",
+        headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify([{ icao, data, fetched_at: new Date().toISOString() }]) });
+  } catch (e) {}
+}
+
 exports.handler = async (event) => {
   const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,OPTIONS", "Cache-Control": "public, max-age=5184000" };
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS };
@@ -21,6 +47,17 @@ exports.handler = async (event) => {
   if (W == null) {
     if (!isFinite(lat) || !isFinite(lon)) return J(400, { error: "need lat/lon or bbox" });
     W = lon - 0.04; E = lon + 0.04; S = lat - 0.03; N = lat + 0.03; }
+
+  // Serve from the persistent cache without touching Overpass when we have a recent copy.
+  let staleHit = null;
+  if (ICAO) {
+    const row = await cacheRead(ICAO);
+    if (row && row.data) {
+      const age = Date.now() - new Date(row.fetched_at).getTime();
+      if (age < GEO_TTL_MS) return J(200, row.data);   // fresh — no Overpass needed
+      staleHit = row.data;                              // stale — try to refresh, but fall back to this if Overpass is down
+    }
+  }
 
   // Fetch the movement features AND the aerodrome polygons in the box (the latter used only to filter).
   const query = `[out:json][timeout:20];(way["aeroway"~"taxiway|runway|apron"](${S},${W},${N},${E});way["aeroway"="aerodrome"](${S},${W},${N},${E});relation["aeroway"="aerodrome"](${S},${W},${N},${E}););out tags geom;`;
@@ -40,7 +77,11 @@ exports.handler = async (event) => {
   // fails over within a single budget no matter which subset of mirrors is down.
   let data = null;
   try { data = await Promise.any(MIRRORS.map(m => attempt(m, 9000))); } catch (e) { data = null; }
-  if (!data) return { statusCode: 200, headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ error: "overpass unavailable", runways: [], taxiways: [], aprons: [] }) };
+  if (!data) {
+    // Overpass is down. Serve a stale cached copy if we have one (short cache so we retry soon); else error.
+    if (staleHit) return { statusCode: 200, headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" }, body: JSON.stringify(staleHit) };
+    return { statusCode: 200, headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify({ error: "overpass unavailable", runways: [], taxiways: [], aprons: [] }) };
+  }
 
   const r5 = c => [Math.round(c.lat * 1e5) / 1e5, Math.round(c.lon * 1e5) / 1e5];
   const centroid = geom => { let a = 0, b = 0; for (const p of geom) { a += p.lat; b += p.lon; } return [a / geom.length, b / geom.length]; };
@@ -84,5 +125,8 @@ exports.handler = async (event) => {
     else if (aw === "taxiway") taxiways.push({ ref, c: g });
     else if (aw === "apron") aprons.push({ c: g });
   }
-  return J(200, { runways, taxiways, aprons });
+  const result = { runways, taxiways, aprons };
+  // Persist on first successful, non-empty fetch so this airport never depends on Overpass again.
+  if (ICAO && (runways.length || taxiways.length || aprons.length)) await cacheWrite(ICAO, result);
+  return J(200, result);
 };
