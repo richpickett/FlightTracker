@@ -118,7 +118,7 @@
   .os-acc{animation:pulse 2s infinite}
   @media (max-width:560px){ #legend{display:none} .tlabel{min-width:120px} }
 </style>
-<script src="route-expand.js"></script>
+<script src="route-expand.js"></script><script src="/prog.js?v=3"></script>
 </head>
 <body>
 <div id="map"></div>
@@ -127,7 +127,7 @@
 
 <div id="hdr">
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:5px">
-    <a href="/" class="hubback" style="margin-bottom:0">⌂ Ops Hub</a>
+    <a href="/" class="hubback" style="margin-bottom:0">‹ Suite</a><a href="/ops/" class="hubback" style="margin-bottom:0">⌂ Ops Hub</a>
     <a id="pw-acct-slot" class="hubback" style="cursor:pointer;margin-bottom:0;background:#0b3d91;color:#fff;border-color:#0b3d91">👤 Sign in</a>
   </div>
   <div class="brand">
@@ -957,6 +957,30 @@ function shareURL(){
 }
 function shareToast(m){ var t=document.getElementById('pw-share-toast'); if(!t){t=document.createElement('div');t.id='pw-share-toast';document.body.appendChild(t);} t.textContent=m; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(function(){t.classList.remove('show');},2600); }
 function shareMap(){
+  if(window.pwCan && window.PW_SB){ window.pwCan(window.PW_SB,'ft.share_html').then(function(ok){ ok?shareMapDo():PW_shareUpgrade(); }); return; }
+  shareMapDo();
+}
+function PW_shareUpgrade(){ var m=document.getElementById('pw-share-up'); if(m){ m.remove(); return; }
+  m=document.createElement('div'); m.id='pw-share-up';
+  m.style.cssText='position:fixed;inset:0;background:rgba(10,20,40,.5);display:flex;align-items:center;justify-content:center;z-index:100000';
+  m.innerHTML='<div style="background:#fff;border-radius:12px;max-width:340px;padding:18px 20px;box-shadow:0 10px 40px #0b3d9133;font:14px system-ui;color:#1a2230"><div style="font-weight:700;color:#0b3d91;margin-bottom:6px">Share live map</div><div style="border:1px solid #f0d8a8;background:#fff7e8;border-radius:8px;padding:9px 11px">\uD83D\uDD12 <b>Sharing the live map</b> is Premium. <b>One plan unlocks everything</b> \u2014 AI NOTAM summaries, food &amp; fuel search, closed RWY/TWY diagrams, live-map sharing, and full Atlas history. <button class="pwTrial" style="border:1px solid #f0d8a8;background:#fff4e0;color:#9a6512;border-radius:6px;padding:3px 9px;font:600 12px system-ui;cursor:pointer">Start 7-day free trial</button> <span class="pwTrialMsg"></span><div style="margin-top:4px;font-size:11px;color:#6b7280">7 days free \u00b7 no credit card \u00b7 reverts to free automatically</div></div><div style="text-align:right;margin-top:10px"><button id="pwShareClose" style="border:1px solid #d8e0ea;background:#eef2f7;border-radius:6px;padding:5px 12px;cursor:pointer">Close</button></div></div>';
+  m.addEventListener('click',function(e){ if(e.target===m) m.remove(); });
+  document.body.appendChild(m); document.getElementById('pwShareClose').onclick=function(){ m.remove(); };
+}
+document.addEventListener('click', function(ev){ var t=ev.target; if(!t||!/\bpwTrial\b/.test(t.className||'')) return;
+  var msg=t.parentNode&&t.parentNode.querySelector?t.parentNode.querySelector('.pwTrialMsg'):null;
+  if(!window.pwStartTrial||!window.PW_SB){ if(msg)msg.textContent=' Sign in first.'; return; }
+  t.disabled=true; t.textContent='\u2026';
+  window.pwStartTrial(window.PW_SB).then(function(r){
+    if(r==='ok'||r==='already_premium'){ if(window.pwMarkFree) window.pwMarkFree(); var u=document.getElementById('pw-share-up'); if(u)u.remove(); shareMapDo(); }
+    else { if(msg) msg.textContent=(r==='trial_already_used')?' Trial already used \u2014 subscribe to unlock.':' Sign in to start a trial.'; t.disabled=false; t.textContent='Start 7-day free trial'; }
+  }); });
+(function(){ var s=document.createElement('style'); s.textContent='.pw-free .pw-lock::after{content:"\uD83D\uDD12";margin-left:5px;font-size:.82em;opacity:.85;text-transform:none}'; document.head.appendChild(s);
+  function pwMarkFree(){ try{ document.body.classList.add('pw-free'); var sb=document.getElementById('sharebtn'); if(sb) sb.classList.add('pw-lock'); if(window.pwScopePremium && window.PW_SB){ window.pwScopePremium(window.PW_SB,'suite').then(function(p){ document.body.classList.toggle('pw-free', !p); }); } }catch(e){} }
+  window.pwMarkFree=pwMarkFree;
+  if(document.readyState!=='loading') pwMarkFree(); else document.addEventListener('DOMContentLoaded', pwMarkFree);
+})();
+function shareMapDo(){
   var url=shareURL();
   var rt=(document.getElementById('routein')||{}).value||'';
   var title='Personal Wings — live tracking'+(rt?(' · '+rt.trim().toUpperCase()):'');
@@ -1021,5 +1045,25 @@ window.PW_getState=function(){return {route:(document.getElementById('routein')|
 window.PW_applyState=function(s){ if(s.aircraft&&s.aircraft.reg&&typeof setReg==='function') setReg(s.aircraft.reg,true); if(s.route){var ri=document.getElementById('routein'); if(ri)ri.value=s.route; if(typeof plotRoute==='function') plotRoute(s.route);} if(s.aircraft&&s.aircraft.windAlt){var wa=document.getElementById('wind-alt'); if(wa)wa.value=s.aircraft.windAlt;} };
 </script>
 <script src="/pwauth.js"></script>
+<script src="/pw-entitle.js?v=1"></script>
+<script>
+(function(){
+  function ready(){
+    var panel=document.getElementById('c-light');
+    if(!window.map || !window.PWProg || !panel){ return setTimeout(ready,300); }
+    var host=panel.closest('.lyr'); if(!host || document.getElementById('c-prog')) return;
+    var d=document.createElement('div'); d.className='lyr';
+    d.innerHTML='<input type="checkbox" id="c-prog"><label for="c-prog"><span class="sw" style="background:#b0812f"></span>Surface Prog</label>';
+    host.parentNode.insertBefore(d, host.nextSibling);
+    var ctrl=null;
+    document.getElementById('c-prog').addEventListener('change',function(ev){
+      if(ev.target.checked){ var bb=map.getBounds();
+        ctrl=PWProg.attach(map,{bbox:[Math.min(-125,bb.getWest()),Math.min(22,bb.getSouth()),Math.max(-66,bb.getEast()),Math.max(52,bb.getNorth())],fhrs:[0,6,12,18],weather:true}); }
+      else { if(ctrl){ ctrl.remove(); ctrl=null; } }
+    });
+  }
+  ready();
+})();
+</script>
 </body>
 </html>

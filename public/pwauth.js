@@ -175,7 +175,7 @@
         payload=payload||{};
         var bid=uuid();
         var brief={ briefing_id: bid, user_id: USER?USER.id:null, client_id: clientId(),
-          route_text: payload.route_text||null, waypoint_count: payload.waypoint_count||null, aircraft_reg: payload.aircraft_reg||null };
+          route_text: payload.route_text||null, waypoint_count: payload.waypoint_count||null, aircraft_reg: payload.aircraft_reg||null, aircraft_type: payload.aircraft_type||null };
         SB.from('briefing').insert(brief).then(function(r){
           if(r.error){ res({ok:false,error:r.error.message}); return; }
           var u=payload.usage||{}, want=Object.keys(u).filter(function(c){ return isFinite(+u[c]) && +u[c]>0; });
@@ -195,8 +195,10 @@
       cfg=j||{};
       if(!cfg.supabaseUrl||!window.supabase){ TRIG.textContent='👤 Account (offline)'; return; }
       SB=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
-      SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); if(wantRecovery){ startRecovery(); } else { render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER) fetchProfile(); });
-      SB.auth.onAuthStateChange(function(ev,sess){ USER=sess?sess.user:null; upd(); if(ev==='PASSWORD_RECOVERY'){ startRecovery(); } else if(!RECOVERY){ render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER) fetchProfile(); });
+      window.PW_SB=SB;   // expose the client so pw-entitle.js (pwCan/pwStartTrial) can gate premium features
+      var PW_ping=function(){ try{ SB.rpc('pw_ping',{p_app:'ft'}); }catch(e){} };
+      SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); if(wantRecovery){ startRecovery(); } else { render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER){ fetchProfile(); PW_ping(); if(window.pwTrialBanner) window.pwTrialBanner(SB); } });
+      SB.auth.onAuthStateChange(function(ev,sess){ USER=sess?sess.user:null; upd(); if(ev==='PASSWORD_RECOVERY'){ startRecovery(); } else if(!RECOVERY){ render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER){ fetchProfile(); PW_ping(); if(window.pwTrialBanner) window.pwTrialBanner(SB); } });
     }).catch(function(){ TRIG.textContent='👤 Account (offline)'; });
   }
   function upd(){ if(TRIG) TRIG.textContent= USER ? ('◉ '+((USER.user_metadata&&USER.user_metadata.name||USER.email).split('@')[0])) : '👤 Sign in'; }
