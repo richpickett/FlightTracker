@@ -664,7 +664,7 @@ function loadNotams(pts){
   // Serialize (one at a time, small gap) so a low free-tier rate limit can't 429 us on parallel airports.
   var qi=0;
   function next(){ if(qi>=items.length) return; var it=items[qi++];
-    fetch(CFG.notamProxy+'?id='+encodeURIComponent(it.p.id)).then(function(r){return r.json();}).then(function(j){ PW_COST.notam++; updateCostBar(); onData(j,it.p,it.blk); })
+    fetch('/.netlify/functions/notams?id='+encodeURIComponent(it.p.id)).then(function(r){return r.json();}).then(function(j){ PW_COST.notam++; updateCostBar(); onData(j,it.p,it.blk); })
       .catch(function(){ it.blk.innerHTML='<b>'+it.p.id+'</b> <span style="color:#889">NOTAMs unavailable</span>'; })
       .then(function(){ setTimeout(next,350); });
   }
