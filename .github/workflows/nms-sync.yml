@@ -1,27 +1,27 @@
-name: NMS NOTAM sync
+name: nms-sync
 on:
+  schedule:
+    - cron: '17 8 * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
-permissions:
-  contents: read
-concurrency:
-  group: nms-sync
-  cancel-in-progress: false
 jobs:
   sync:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Run NMS sync
+      - name: Run sync
         env:
           NMS_HOST: ${{ secrets.NMS_HOST }}
           NMS_CLIENT_ID: ${{ secrets.NMS_CLIENT_ID }}
           NMS_CLIENT_SECRET: ${{ secrets.NMS_CLIENT_SECRET }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          NMS_CLASSES: 'DOMESTIC,INTERNATIONAL,FDC'
         run: |
-          echo "manual bulk run"
-          node netlify/functions/nms-sync.js bulk
+          if [ "${{ github.event.schedule }}" = "17 8 * * *" ]; then
+            node netlify/functions/nms-sync.js bulk
+          else
+            node netlify/functions/nms-sync.js incremental
+          fi
