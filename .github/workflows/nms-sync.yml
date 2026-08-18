@@ -1,8 +1,5 @@
 name: NMS NOTAM sync
 on:
-  schedule:
-    - cron: '17 8 * * *'
-    - cron: '*/15 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,8 +23,5 @@ jobs:
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           NMS_CLASSES: 'DOMESTIC,INTERNATIONAL,FDC'
         run: |
-          MODE=incremental
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then MODE=bulk; fi
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "17 8 * * *" ]; then MODE=bulk; fi
-          echo "event=${{ github.event_name }} schedule='${{ github.event.schedule }}' -> MODE=$MODE"
-          node netlify/functions/nms-sync.js "$MODE"
+          echo "manual bulk run"
+          node netlify/functions/nms-sync.js bulk
