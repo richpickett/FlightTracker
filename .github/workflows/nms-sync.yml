@@ -33,8 +33,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             if [ "${{ github.event.schedule }}" = "17 8 * * *" ]; then MODE=bulk; else MODE=incremental; fi
-          else
-            MODE="${{ github.event.inputs.mode }}"
+           else
+            MODE=bulk
           fi
           echo "Running mode=$MODE"
           node netlify/functions/nms-sync.js "$MODE"
