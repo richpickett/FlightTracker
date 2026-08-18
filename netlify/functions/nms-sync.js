@@ -13,7 +13,8 @@ const NMS_HOST = process.env.NMS_HOST || "https://api-staging.cgifederal-aim.com
 const CID = process.env.NMS_CLIENT_ID, CSECRET = process.env.NMS_CLIENT_SECRET;
 const SB_URL = process.env.SUPABASE_URL, SB_KEY = process.env.SUPABASE_SERVICE_ROLE;
 const SYNC_KEY = process.env.NMS_SYNC_KEY;
-const CLASSES = (process.env.NMS_CLASSES || "DOMESTIC,INTERNATIONAL,FDC").split(",").map(s => s.trim()).filter(Boolean);
+// US mirror = DOMESTIC + FDC. Foreign airports are pulled on-demand per-airport (not mirrored).
+const CLASSES = (process.env.NMS_CLASSES || "DOMESTIC,FDC").split(",").map(s => s.trim()).filter(Boolean);
 
 // ---- NMS auth (token cached across warm invocations) ----
 let _tok = null, _exp = 0;
@@ -173,3 +174,18 @@ exports.handler = async (event) => {
     return J(200, { error: String(e.message || e), mode });
   }
 };
+
+// CLI entry so the same file runs in a GitHub Action:  node nms-sync.js <bulk|incremental|status>
+if (require.main === module) {
+  const mode = (process.argv[2] || "incremental").toLowerCase();
+  (async () => {
+    try {
+      let out;
+      if (mode === "bulk") out = await bulk();
+      else if (mode === "status") out = { rows: await sbCount(), state: await sbGetState() };
+      else out = await incremental();
+      console.log(JSON.stringify(out));
+      process.exit(0);
+    } catch (e) { console.error("nms-sync error:", e.message || e); process.exit(1); }
+  })();
+}
