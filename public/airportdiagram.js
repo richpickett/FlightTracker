@@ -279,7 +279,8 @@
     var schedBits=[]; Object.keys(rSched).sort().forEach(function(k){ schedBits.push('RWY '+k+(rSched[k]?' ('+rSched[k]+')':'')); });
     twSchedOnly.forEach(function(id){ schedBits.push('TWY '+id); });
     var schedStr=schedBits.join(', ');
-    var winLabel=HAVE_ETA?('at your ETA ~'+zhm(arrMs)):'active now';
+    var etaRole=(typeof w.PW_timeRole==='function')?w.PW_timeRole(icao):'ETA';   // ETD for the departure field, ETA otherwise
+    var winLabel=HAVE_ETA?('at your '+etaRole+' ~'+zhm(arrMs)):'active now';
 
     var ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;background:rgba(11,22,34,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -296,9 +297,9 @@
       +'<b style="color:#1b2733">Closed '+winLabel+':</b> &nbsp;'
       +(rk.length?'<b>RWY:</b> <span style="color:#c01722;font-weight:700">'+rwStr+'</span> &nbsp;·&nbsp; ':'')
       +'<b>TWY:</b> <span style="color:#c01722;font-weight:700">'+(cl.length?cl.join(', '):'none')+'</span> '
-      +(otherStr?'<br><b style="color:#8a6d1b">Other times today (not at your ETA):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(otherStr)+'</span> ':'')
+      +(otherStr?'<br><b style="color:#8a6d1b">Other times today (not at your '+etaRole+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(otherStr)+'</span> ':'')
       +(schedStr?'<br><b style="color:#8a6d1b">Scheduled (not active '+DOW[NOWDOW]+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(schedStr)+'</span> ':'')
-      +'<span style="color:#8a97a5">· closures shown for your planned arrival window; other-time &amp; recurring closures listed separately; crossing/taxi exceptions dashed; verify against the official diagram &amp; NOTAMs</span></div>';
+      +'<span style="color:#8a97a5">· closures shown for your planned '+(etaRole==='ETD'?'departure':'arrival')+' window; other-time &amp; recurring closures listed separately; crossing/taxi exceptions dashed; verify against the official diagram &amp; NOTAMs</span></div>';
     ov.appendChild(panel); document.body.appendChild(ov);
     function close(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }
     panel.querySelector('#pwd-x').onclick=close;

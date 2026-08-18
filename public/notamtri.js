@@ -111,11 +111,11 @@
   function isCancel(n){ var t=(n.text||'').toUpperCase();
     return /\bNOTAMC\b/.test(t) || /\bCANCELL?ED\b/.test(t) || /\bCNL\b/.test(t) || (n.condition||'').toUpperCase()==='XX'; }
   // Time status of a NOTAM vs now + the planned arrival window [ETA−1h, ETA+2h].
-  function timeStatus(n, etaMs){
+  function timeStatus(n, etaMs, role){
     var s=n.start?Date.parse(n.start):null, e=n.end?Date.parse(n.end):null, now=Date.now();
     if(e!=null && e<now) return {label:'ended', col:'#9aa7b4', dim:true};
     if(etaMs!=null){ var ws=etaMs-3600000, we=etaMs+7200000;
-      if((s==null||s<=we)&&(e==null||e>=ws)) return {label:'at ETA', col:'#c0392b', dim:false}; }
+      if((s==null||s<=we)&&(e==null||e>=ws)) return {label:'at '+(role||'ETA'), col:'#c0392b', dim:false}; }
     if(s!=null && s>now) return {label:'later', col:'#b7791f', dim:false};
     return {label:'active', col:'#2f7a45', dim:false};
   }
@@ -178,11 +178,11 @@
     });
   }
 
-  function line(n, etaMs){
+  function line(n, etaMs, role){
     var eff=fmt(n.start)+(n.end?'–'+fmt(n.end):'');
     var dup=n._dups>1?' <span style="color:#9aa7b4">×'+n._dups+'</span>':'';
     var reg=n._local?'':' <span class="nf-reg">REGIONAL</span>';
-    var ts=timeStatus(n, etaMs);
+    var ts=timeStatus(n, etaMs, role);
     var tb=' <span class="nf-time" style="background:'+ts.col+'">'+ts.label+'</span>';
     return '<span class="raw"'+(ts.dim?' style="opacity:.5"':'')+'><span class="ntag" style="background:'+n._c.color+'">'+n._c.label+'</span>'+tb+' '+(eff?'['+eff+'] ':'')+esc(plain(n.text))+dup+reg+'</span>';
   }
@@ -190,7 +190,8 @@
   function renderList(blk, p, arr, mode, rawN){
     var vis=applyFilter(arr), shown=vis.length, hidden=arr.length-shown;
     var etaMs=(typeof w.PW_arrivalMs==='function')?w.PW_arrivalMs(p.id):null;
-    var head='<b>'+p.id+'</b> <span style="color:#889">'+shown+' shown'+(hidden?' · '+hidden+' filtered':'')+' · '+arr.length+' total'+(etaMs!=null?' · ETA-aware':'')+'</span>'+diagLinks(p,arr);
+    var role=(typeof w.PW_timeRole==='function')?w.PW_timeRole(p.id):'ETA';
+    var head='<b>'+p.id+'</b> <span style="color:#889">'+shown+' shown'+(hidden?' · '+hidden+' filtered':'')+' · '+arr.length+' total'+(etaMs!=null?' · '+role+'-aware':'')+'</span>'+diagLinks(p,arr);
     if(mode==='plain'){
       var sigItems=vis.filter(function(n){return n._c.pri<=2;});
       var hp=head;
@@ -207,11 +208,11 @@
     if(hard.length){
       h+='<span class="sub" style="color:#c0392b;font-weight:600">⚑ Critical — closures &amp; hard stops ('+hard.length+')</span>';
       var lf=null;
-      hard.forEach(function(n){ if(n._fac&&n._fac!==lf){ h+='<span class="sub" style="opacity:.75">'+esc(n._fac)+'</span>'; lf=n._fac; } h+=line(n,etaMs); });
+      hard.forEach(function(n){ if(n._fac&&n._fac!==lf){ h+='<span class="sub" style="opacity:.75">'+esc(n._fac)+'</span>'; lf=n._fac; } h+=line(n,etaMs,role); });
     }
     var cap=Math.max(10, 40-hard.length), showRest=rest.slice(0,cap), lf2=null;
     if(showRest.length) h+='<span class="sub" style="opacity:.75;margin-top:4px">Advisory</span>';
-    showRest.forEach(function(n){ if(n._fac&&n._fac!==lf2){ h+='<span class="sub" style="opacity:.75">'+esc(n._fac)+'</span>'; lf2=n._fac; } h+=line(n,etaMs); });
+    showRest.forEach(function(n){ if(n._fac&&n._fac!==lf2){ h+='<span class="sub" style="opacity:.75">'+esc(n._fac)+'</span>'; lf2=n._fac; } h+=line(n,etaMs,role); });
     var more=vis.length-hard.length-showRest.length;
     if(more>0) h+='<span class="sub">…'+more+' more in filter — see <a class="inline" href="https://notams.aim.faa.gov/notamSearch/" target="_blank">FAA NOTAM Search ↗</a></span>';
     blk.innerHTML=h;
