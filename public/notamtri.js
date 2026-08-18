@@ -12,7 +12,7 @@
   function plain(t){ return w.notamPlain ? w.notamPlain(t) : String(t); }
   function cat(t){ return w.notamCat ? w.notamCat(t) : {label:'OTHER',color:'#6b7280',pri:4}; }
   function fmt(s){ return w.fmtNz ? w.fmtNz(s) : (s||''); }
-  function diag(id){ return ' · <a class="inline" href="https://skyvector.com/airport/'+encodeURIComponent(id)+'" target="_blank" rel="noopener">✈ Airport diagram (FAA) ↗</a>'; }
+  function diag(id){ return ' · <a class="inline" href="https://skyvector.com/airport/'+encodeURIComponent(id)+'" target="_blank" rel="noopener">✈ SkyVector / Airport Charts ↗</a>'; }
   function diagLinks(p, arr){
     w.__pwdiag = w.__pwdiag || {}; w.__pwdiag[p.id] = { lat:p.la, lon:p.lo, items:arr };
     var hasClose = arr.some(function(n){ var u=(n.text||'').toUpperCase(); return /\b(TWY|RWY)\b/.test(u) && /\bCLSD\b/.test(u); });

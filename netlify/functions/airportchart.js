@@ -29,7 +29,10 @@ exports.handler = async (event) => {
       Object.keys(data.charts).forEach(k => { if (Array.isArray(data.charts[k])) all = all.concat(data.charts[k].map(c => ({ ...c, category: c.category || k }))); });
     } else if (data.charts && Array.isArray(data.charts)) all = data.charts;
     all = all.filter(c => c && c.url).map(c => ({ name: nm(c), url: c.url, category: cat(c) }));
-    const isAD = c => /airport\s*diagram/i.test(c.name) || /^APD$/i.test(c.category) || /AD\.PDF(\?|$)/i.test(c.url) || /\bairport\b/i.test(c.name);
+    // Match the real Airport Diagram. NOTE: require a DIGIT before "AD.PDF" — FAA airport-diagram files are
+    // <5-char-id>AD.PDF (e.g. 00119AD.PDF), but general charts like RADAR MINIMUMS are <region>RAD.PDF
+    // ("SW1RAD.PDF") which also ends in "AD.PDF" and was false-matching. Drop the loose /\bairport\b/ name test too.
+    const isAD = c => /airport\s*diagram/i.test(c.name) || /^APD$/i.test(c.category) || /\dAD\.PDF(\?|$)/i.test(c.url);
     let diagram = all.find(isAD) || null;
     if (!diagram) {
       // SkyLink lists procedures but not the airport diagram — derive it: FAA d-TPP <5-digit><proc>.PDF  ->  <5-digit>AD.PDF

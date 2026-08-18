@@ -390,6 +390,13 @@
     }
     // Draw NMS closure polygons (authoritative FAA lat/lon geometry) directly — no text→geometry inference,
     // which is what caused boundary false positives. Used whenever the NOTAMs carry geometry (US mirror).
+    // True only if the geometry contains a drawable POLYGON. Point-only geometry (common for taxiway closures)
+    // can't be drawn as a closed area, so those must fall back to the OSM text-path instead of blanking the map.
+    function geomHasPolygon(gg){ if(!gg) return false; var found=false;
+      (function walk(x){ if(!x||found) return;
+        if(x.type==='GeometryCollection'&&x.geometries){ x.geometries.forEach(walk); return; }
+        if(x.type==='Polygon'||x.type==='MultiPolygon') found=true; })(gg);
+      return found; }
     function drawNmsClosures(g){
       var pts=[], drew=0;
       (data.items||[]).forEach(function(n){
@@ -427,7 +434,9 @@
       fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
         if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){ linkFallback('Airport diagram is unavailable right now (OSM &amp; FAA chart service).'); return; }
         var bounds=[], notLocated=[];
-        var haveNmsGeom=(data.items||[]).some(function(n){ return (n.closed||n.conditional)&&n.geometry; });
+        // Only take the NMS-polygon path when an ACTIVE (in-window, non-cancelled) closure actually carries a
+        // polygon; otherwise (e.g. KEWR — Point-only taxiway closures) draw closures via the OSM text-path.
+        var haveNmsGeom=(data.items||[]).some(function(n){ return !isCancel(n) && inWindow(n) && (n.closed||n.conditional) && geomHasPolygon(n.geometry); });
         (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#d7dee6',weight:1,fillColor:'#e7ecf1',fillOpacity:.7,interactive:false}).addTo(g); });
         (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
           L.polyline(tw.c,{color:'#9aa7b4',weight:2,opacity:.9,interactive:false}).addTo(g);
@@ -460,7 +469,7 @@
           if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 11px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[46,14]})}).addTo(g);
         });
         if(haveNmsGeom){ var nz=drawNmsClosures(g); if(nz.pts.length) bounds=bounds.concat(nz.pts); if(nz.drew) setSrc('· FAA NMS closures'); }
-        if(bounds.length) map.fitBounds(bounds,{padding:[14,14]});
+        if(bounds.length) map.fitBounds(bounds,{padding:[6,6]});
         stopLoading(); closuresPanel();
         if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
       }).catch(function(){ linkFallback('Airport diagram is unavailable right now.'); });
