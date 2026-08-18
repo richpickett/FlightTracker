@@ -13,8 +13,12 @@ const NMS_HOST = process.env.NMS_HOST || "https://api-staging.cgifederal-aim.com
 const CID = process.env.NMS_CLIENT_ID, CSECRET = process.env.NMS_CLIENT_SECRET;
 const SB_URL = process.env.SUPABASE_URL, SB_KEY = process.env.SUPABASE_SERVICE_ROLE;
 const SYNC_KEY = process.env.NMS_SYNC_KEY;
-// US mirror = DOMESTIC + FDC. Foreign airports are pulled on-demand per-airport (not mirrored).
-const CLASSES = (process.env.NMS_CLASSES || "DOMESTIC,FDC").split(",").map(s => s.trim()).filter(Boolean);
+// US-only mirror. Pull all three classifications (US airports issue NOTAMs across DOMESTIC and
+// INTERNATIONAL — the intl set carries real closures the domestic set lacks) but keep only US-location
+// rows. Non-US airports are served by SkyLink at read time, not mirrored.
+const CLASSES = (process.env.NMS_CLASSES || "DOMESTIC,INTERNATIONAL,FDC").split(",").map(s => s.trim()).filter(Boolean);
+// US ICAO prefixes: K (CONUS) · P[A/F/G/H/K/L/M/O/P/W] (Alaska/Hawaii/Pacific) · TI/TJ (USVI/PR).
+function isUS(icao) { icao = (icao || "").toUpperCase(); return /^K[A-Z]{3}$/.test(icao) || /^P[AFGHKLMOPW][A-Z]{2}$/.test(icao) || /^T[IJ][A-Z]{2}$/.test(icao); }
 
 // ---- NMS auth (token cached across warm invocations) ----
 let _tok = null, _exp = 0;
@@ -71,7 +75,7 @@ function normalize(feature) {
     ntype: n.type || null, text: n.text || null, translation: translation || null,
     effective_start: isoOrNull(n.effectiveStart), effective_end: isoOrNull(n.effectiveEnd),
     issued: isoOrNull(n.issued), last_updated: isoOrNull(n.lastUpdated),
-    geometry: feature.geometry || null, raw: n
+    geometry: feature.geometry || null
   };
 }
 
@@ -120,7 +124,7 @@ async function bulk() {
   const per = {};
   for (const cls of CLASSES) {
     const d = await nmsGet("/nmsapi/v1/notams?classification=" + encodeURIComponent(cls));
-    const rows = featuresFrom(d).map(normalize).filter(r => r.id);
+    const rows = featuresFrom(d).map(normalize).filter(r => r.id && isUS(r.icao_location));
     await sbUpsert(rows, stamp);
     for (const r of rows) watermark = maxIso(watermark, r.last_updated);
     per[cls] = rows.length; total += rows.length;
@@ -146,7 +150,7 @@ async function incremental() {
   const floor = new Date(Date.now() - MAXBACK).toISOString();
   if (since < floor) since = floor;
   const d = await nmsGet("/nmsapi/v1/notams?lastUpdatedDate=" + encodeURIComponent(since));
-  const rows = featuresFrom(d).map(normalize).filter(r => r.id);
+  const rows = featuresFrom(d).map(normalize).filter(r => r.id && isUS(r.icao_location));
   const stamp = new Date().toISOString();
   if (rows.length) await sbUpsert(rows, stamp);
   let watermark = since;
