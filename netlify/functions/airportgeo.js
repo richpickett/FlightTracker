@@ -60,8 +60,12 @@ exports.handler = async (event) => {
   }
 
   // Fetch the movement features AND the aerodrome polygons in the box (the latter used only to filter).
-  const query = `[out:json][timeout:20];(way["aeroway"~"taxiway|runway|apron"](${S},${W},${N},${E});way["aeroway"="aerodrome"](${S},${W},${N},${E});relation["aeroway"="aerodrome"](${S},${W},${N},${E}););out tags geom;`;
-  const MIRRORS = ["https://maps.mail.ru/osm/tools/overpass/api/interpreter","https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter","https://overpass.private.coffee/api/interpreter","https://overpass.osm.jp/api/interpreter"];
+  const query = `[out:json][timeout:25];(way["aeroway"~"taxiway|runway|apron"](${S},${W},${N},${E});way["aeroway"="aerodrome"](${S},${W},${N},${E});relation["aeroway"="aerodrome"](${S},${W},${N},${E}););out tags geom;`;
+  // Ordered fastest-healthy first (measured Aug 2026). Promise.any races all of them, so dead mirrors
+  // (406/429/503) fail in <1s and cost nothing; healthy ones win. osm.ch + mail.ru carry heavy queries;
+  // the rest are rotating backups (mirror health cycles over time). Re-check with the mirror probe if
+  // cold fetches start stalling again.
+  const MIRRORS = ["https://overpass.osm.ch/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter","https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
 
   const attempt = (url, ms) => {
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), ms);
@@ -71,12 +75,12 @@ exports.handler = async (event) => {
       .finally(() => clearTimeout(to));
   };
 
-  // Race all mirrors concurrently and take the first valid response. Sequential
-  // fallback can't work inside Netlify's ~10s function budget: at 9s per attempt,
-  // one hung mirror kills the whole function before the next is tried. Racing
-  // fails over within a single budget no matter which subset of mirrors is down.
+  // Race all mirrors concurrently and take the first valid response. Netlify synchronous functions get a
+  // 60s budget (verified Aug 2026), so the per-mirror abort is 28s — a healthy mirror (osm.ch ~1.5s) wins
+  // immediately, but a slow-but-working one is allowed to finish its 25s server-side compute instead of
+  // being killed early. Racing means one hung mirror never blocks the others.
   let data = null;
-  try { data = await Promise.any(MIRRORS.map(m => attempt(m, 9000))); } catch (e) { data = null; }
+  try { data = await Promise.any(MIRRORS.map(m => attempt(m, 28000))); } catch (e) { data = null; }
   if (!data) {
     // Overpass is down. Serve a stale cached copy if we have one (short cache so we retry soon); else error.
     if (staleHit) return { statusCode: 200, headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" }, body: JSON.stringify(staleHit) };
