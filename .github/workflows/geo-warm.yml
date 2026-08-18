@@ -1,0 +1,17 @@
+name: geo-warm
+on:
+  schedule:
+    - cron: '0 9 1 * *'
+  workflow_dispatch:
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Warm airport-geometry cache
+        env:
+          SITE: https://personalwings-ops.netlify.app
+        run: node tools/geo-warm.mjs
