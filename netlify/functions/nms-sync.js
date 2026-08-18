@@ -32,13 +32,16 @@ async function token() {
   _tok = j.access_token; _exp = now + (parseInt(j.expires_in || "1799", 10) * 1000);
   return _tok;
 }
+const zlib = require("zlib");
 async function nmsGet(path) {
   const t = await token();
   const r = await fetch(NMS_HOST + path, { headers: { Authorization: "Bearer " + t, nmsResponseFormat: "GEOJSON", Accept: "application/json" } });
-  const txt = await r.text();
-  if (!r.ok) throw new Error("nms " + r.status + " " + path + ": " + txt.slice(0, 200));
-  let d; try { d = JSON.parse(txt); } catch (e) { throw new Error("nms non-json " + path); }
-  return d;
+  let buf = Buffer.from(await r.arrayBuffer());
+  if (!r.ok) throw new Error("nms " + r.status + " " + path + ": " + buf.toString("utf8").slice(0, 200));
+  // Bulk/classification pulls return a gzipped file (not inline JSON) — decompress if gzip-magic present.
+  if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) { try { buf = zlib.gunzipSync(buf); } catch (e) {} }
+  const txt = buf.toString("utf8");
+  try { return JSON.parse(txt); } catch (e) { throw new Error("nms non-json " + path + " ct=" + (r.headers.get("content-type") || "?") + " first=" + JSON.stringify(txt.slice(0, 140))); }
 }
 // Feature list can arrive as {data:{geojson:[]}}, a FeatureCollection {features:[]}, or a bare array.
 function featuresFrom(d) {
