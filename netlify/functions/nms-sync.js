@@ -125,9 +125,22 @@ async function bulk() {
   await sbSetState({ last_bulk: stamp, last_sync: watermark, note: "bulk " + total });
   return { mode: "bulk", total, per, watermark };
 }
+async function probe(only) {
+  const list = only ? [only.toUpperCase()] : CLASSES;
+  const per = {};
+  for (const cls of list) {
+    const d = await nmsGet("/nmsapi/v1/notams?classification=" + encodeURIComponent(cls));
+    const feats = featuresFrom(d);
+    per[cls] = { features: feats.length, approxBytes: JSON.stringify(d).length };
+  }
+  return { mode: "probe", per };
+}
 async function incremental() {
   const st = await sbGetState();
-  const since = st.last_sync || new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const MAXBACK = 23 * 3600 * 1000;           // NMS rejects lastUpdatedDate older than 24h
+  let since = st.last_sync || new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+  const floor = new Date(Date.now() - MAXBACK).toISOString();
+  if (since < floor) since = floor;
   const d = await nmsGet("/nmsapi/v1/notams?lastUpdatedDate=" + encodeURIComponent(since));
   const rows = featuresFrom(d).map(normalize).filter(r => r.id);
   const stamp = new Date().toISOString();
@@ -150,6 +163,7 @@ exports.handler = async (event) => {
   const mode = (q.mode || "incremental").toLowerCase();
   try {
     if (mode === "status") return J(200, { mode: "status", rows: await sbCount(), state: await sbGetState(), classes: CLASSES, host: NMS_HOST });
+    if (mode === "probe") return J(200, await probe(q.class));
     if (mode === "bulk") return J(200, await bulk());
     return J(200, await incremental());
   } catch (e) {
