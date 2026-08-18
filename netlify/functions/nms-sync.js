@@ -167,6 +167,13 @@ exports.handler = async (event) => {
   const mode = (q.mode || "incremental").toLowerCase();
   try {
     if (mode === "status") return J(200, { mode: "status", rows: await sbCount(), state: await sbGetState(), classes: CLASSES, host: NMS_HOST });
+    if (mode === "airport") {
+      const icao = (q.icao || "").toUpperCase();
+      const r = await fetch(SB_URL + "/rest/v1/notam?icao_location=eq." + encodeURIComponent(icao) + "&select=number,q_code,q_subject,q_condition,text,effective_end,geometry", { headers: SBH });
+      const rows = r.ok ? await r.json() : [];
+      const clsd = rows.filter(x => /^M[RXN]$/.test(x.q_subject || "") && (x.q_condition === "LC" || x.q_condition === "LT"));
+      return J(200, { icao, total: rows.length, closures: clsd.length, sample: clsd.slice(0, 6).map(c => ({ q: c.q_code, geom: c.geometry && c.geometry.type, txt: (c.text || "").slice(0, 70) })) });
+    }
     if (mode === "probe") return J(200, await probe(q.class));
     if (mode === "bulk") return J(200, await bulk());
     return J(200, await incremental());
