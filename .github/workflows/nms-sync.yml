@@ -4,11 +4,6 @@ on:
     - cron: '17 8 * * *'
     - cron: '*/15 * * * *'
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'incremental | bulk | status'
-        type: string
-        default: bulk
 permissions:
   contents: read
 concurrency:
@@ -29,12 +24,10 @@ jobs:
           NMS_CLIENT_SECRET: ${{ secrets.NMS_CLIENT_SECRET }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          NMS_CLASSES: 'DOMESTIC,FDC'
+          NMS_CLASSES: 'DOMESTIC,INTERNATIONAL,FDC'
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [ "${{ github.event.schedule }}" = "17 8 * * *" ]; then MODE=bulk; else MODE=incremental; fi
-           else
-            MODE=bulk
-          fi
-          echo "Running mode=$MODE"
+          MODE=incremental
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then MODE=bulk; fi
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "17 8 * * *" ]; then MODE=bulk; fi
+          echo "event=${{ github.event_name }} schedule='${{ github.event.schedule }}' -> MODE=$MODE"
           node netlify/functions/nms-sync.js "$MODE"
