@@ -195,29 +195,69 @@
     var data=(w.__pwdiag||{})[icao]; if(!data){ alert('No diagram data for '+icao); return; }
     var items=data.items||[];
     var NOWDOW=(new Date()).getUTCDay();
+    var NOW=Date.now();
+    // Planned-arrival window: closures are judged against WHEN you'll be at the field, not merely "today".
+    // The briefing exposes PW_arrivalMs(icao) (dep time + wind-corrected ETE). Window = ETA −1h … +2h.
+    // With no route/ETA, fall back to "active now".
+    var arrMs=(typeof w.PW_arrivalMs==='function')?w.PW_arrivalMs(icao):null;
+    var HAVE_ETA=(arrMs!=null && isFinite(arrMs));
+    var WSTART=HAVE_ETA?(arrMs-60*60000):NOW, WEND=HAVE_ETA?(arrMs+120*60000):NOW;
+    function msOf(x){ var t=x?Date.parse(x):NaN; return isFinite(t)?t:null; }
+    // A NOTAMC cancellation carries the cancelled closure's text ("RWY x CLSD CANCELED") — never a real closure.
+    function isCancel(n){ var t=(n.text||'').toUpperCase();
+      return /\bNOTAMC\b/.test(t) || /\bCANCELL?ED\b/.test(t) || /\bCNL\b/.test(t) || (n.condition||'').toUpperCase()==='XX'; }
+    function inWindow(n){ var s=msOf(n.start), e=msOf(n.end);
+      if(s!=null && s>WEND) return false;      // starts after the window
+      if(e!=null && e<WSTART) return false;     // ended before the window
+      return true; }
+    function zhm(m){ var d=new Date(m); return ('0'+d.getUTCHours()).slice(-2)+('0'+d.getUTCMinutes()).slice(-2)+'Z'; }
+    function winTxt(n){ var s=msOf(n.start), e=msOf(n.end); if(s==null&&e==null) return '';
+      var t=(s!=null?zhm(s):'?')+'–'+(e!=null?zhm(e):'?');
+      if(s!=null&&e!=null&&new Date(e).getUTCDate()!==new Date(s).getUTCDate()) t+=' +'+Math.round((e-s)/86400000)+'d';
+      return t; }
+    function uniqArr(a){ var o={},r=[]; a.forEach(function(x){ if(x&&!o[x]){o[x]=1;r.push(x);} }); return r; }
     // Absorb FNS/SWIM schedule loss: group NOTAM instances by identity; a closure is scheduled if ANY sibling carries a schedule.
     // Group by validity window (start|end): FNS drops the schedule text but shares start/end with its scheduled SWIM twin,
     // so grouping on start|end lets the schedule from the twin cover the schedule-less copy.
     function idKey(n){ return (n.start||n.end) ? ((n.start||'')+'|'+(n.end||'')) : ('n:'+(n.number||n.text||'')); }
-    // ----- taxiways: clause + whether its NOTAM is active today -----
-    var twClauses={}, twInactive={};
-    items.forEach(function(n){ var segs=closedTwySegs(n.text); if(!segs.length) return;
-      var act=schedActive(notamSched(n.text), NOWDOW);
-      segs.forEach(function(c){ if(act){ (twClauses[c.twy]=twClauses[c.twy]||[]).push(c); } else { twInactive[c.twy]=1; } });
+    // ----- taxiways: active-in-window / other-times-today / scheduled-other-day -----
+    var twClauses={}, twInactive={}, twOther={};
+    items.forEach(function(n){ if(isCancel(n)) return; var segs=closedTwySegs(n.text); if(!segs.length) return;
+      var dayOk=schedActive(notamSched(n.text), NOWDOW);
+      segs.forEach(function(c){
+        if(!dayOk){ twInactive[c.twy]=1; return; }
+        if(inWindow(n)){ (twClauses[c.twy]=twClauses[c.twy]||[]).push(c); }
+        else { (twOther[c.twy]=twOther[c.twy]||[]).push(winTxt(n)); }
+      });
     });
     var cl=Object.keys(twClauses).sort();
-    var twSchedOnly=Object.keys(twInactive).filter(function(id){return !twClauses[id];}).sort();
-    // ----- runways: aggregate, group by identity for schedule, keep only active-today closures -----
-    var rInst={}; items.forEach(function(n){ closedRwys(n.text).forEach(function(r){ var k=normRwy(r.rwy); (rInst[k]=rInst[k]||[]).push({r:r,n:n}); }); });
-    var closedR={}, rSched={};
+    var twOtherIds=Object.keys(twOther).filter(function(id){return !twClauses[id];}).sort();
+    var twSchedOnly=Object.keys(twInactive).filter(function(id){return !twClauses[id]&&!twOther[id];}).sort();
+    // ----- runways: active-in-window / other-times-today / scheduled-other-day -----
+    var rInst={}; items.forEach(function(n){ if(isCancel(n)) return; closedRwys(n.text).forEach(function(r){ var k=normRwy(r.rwy); (rInst[k]=rInst[k]||[]).push({r:r,n:n}); }); });
+    var closedR={}, rSched={}, rOther={};
     Object.keys(rInst).forEach(function(key){
-      var groups={}; rInst[key].forEach(function(x){ var g=idKey(x.n); (groups[g]=groups[g]||{texts:[],rs:[]}); groups[g].texts.push(x.n.text||''); groups[g].rs.push(x.r); });
-      var active=false, schedDays={};
-      Object.keys(groups).forEach(function(g){ var s=notamSched(groups[g].texts.join(' '));
-        if(schedActive(s,NOWDOW)) active=true; else if(s&&s.days) s.days.forEach(function(d){schedDays[d]=1;}); });
-      if(!active){ rSched[key]=Object.keys(schedDays).map(function(d){return DOW[d];}).join('/'); return; } // scheduled but not today
+      var insts=rInst[key];
+      // Day-of-week schedule, per instance. A schedule-less closure is either (a) a genuine continuous closure
+      // — active every day — or (b) an FNS twin whose SWIM sibling carries the schedule (FNS drops the schedule
+      // text but shares the validity envelope). Distinguish: a real continuous closure carries an operational
+      // qualifier (EXC XNG / EXC TAX) or has no scheduled same-envelope sibling → active. A bare "CLSD" that
+      // shares an envelope with a day-scheduled sibling inherits that schedule (the FNS-twin case). This keeps
+      // a continuous "10R/28L CLSD EXC XNG" active while a bare-CLSD FNS twin of "10L/28R CLSD WED" stays Wed.
+      var envSched={}; insts.forEach(function(x){ var s=notamSched(x.n.text); if(s&&s.days){ var k=idKey(x.n); (envSched[k]=envSched[k]||{}); s.days.forEach(function(d){envSched[k][d]=1;}); } });
+      var dayActive=false, schedDays={};
+      insts.forEach(function(x){ var txt=(x.n.text||'').toUpperCase(), s=notamSched(txt);
+        if(s){ if(schedActive(s,NOWDOW)) dayActive=true; else s.days.forEach(function(d){schedDays[d]=1;}); return; }
+        if(/\bEXC\s+(XNG|TAX)/.test(txt)){ dayActive=true; return; }              // real continuous closure state
+        var inh=envSched[idKey(x.n)];
+        if(inh){ Object.keys(inh).forEach(function(d){schedDays[d]=1;}); return; } // FNS twin -> inherit sibling schedule
+        dayActive=true;                                                            // truly continuous
+      });
+      if(!dayActive){ rSched[key]=Object.keys(schedDays).map(function(d){return DOW[d];}).join('/'); return; } // scheduled other day
+      var inWin=insts.filter(function(x){ return inWindow(x.n); });
+      if(!inWin.length){ rOther[key]=uniqArr(insts.map(function(x){return winTxt(x.n);})); return; }  // today but not at your ETA
       var p={kind:null,detail:'',taxiExc:false,xngExc:false,dist:0,dir:'',end:''};
-      rInst[key].forEach(function(x){ var r=x.r;
+      inWin.forEach(function(x){ var r=x.r;
         if(r.kind==='closed'){ p.kind='closed'; if(r.taxiExc)p.taxiExc=true; if(r.xngExc)p.xngExc=true; }
         else if(r.kind==='partial'){ if(p.kind!=='closed'){ p.kind='partial'; p.detail=r.detail; p.dist=r.dist; p.dir=r.dir; } }
         else if(r.kind==='displaced'){ if(!p.kind){ p.kind='displaced'; p.detail=r.detail; p.dist=r.dist; p.end=r.end; } }
@@ -231,15 +271,20 @@
       var exc=r.taxiExc?' (taxi only)':r.xngExc?' (crossing only)':'';
       return k+' — closed'+exc; }
     var rwStr=rk.map(rwLabel).join('; ');
-    // scheduled-but-not-active note (runways + taxiways)
+    // "Other times today" — active today but NOT during your arrival window, shown with UTC windows.
+    var otherBits=[]; Object.keys(rOther).sort().forEach(function(k){ otherBits.push('RWY '+k+(rOther[k].length?' ('+rOther[k].join(', ')+')':'')); });
+    twOtherIds.forEach(function(id){ otherBits.push('TWY '+id+(twOther[id].length?' ('+uniqArr(twOther[id]).join(', ')+')':'')); });
+    var otherStr=otherBits.join('; ');
+    // scheduled-but-not-active-today (day-of-week)
     var schedBits=[]; Object.keys(rSched).sort().forEach(function(k){ schedBits.push('RWY '+k+(rSched[k]?' ('+rSched[k]+')':'')); });
     twSchedOnly.forEach(function(id){ schedBits.push('TWY '+id); });
     var schedStr=schedBits.join(', ');
+    var winLabel=HAVE_ETA?('at your ETA ~'+zhm(arrMs)):'active now';
 
     var ov=document.createElement('div');
     ov.style.cssText='position:fixed;inset:0;background:rgba(11,22,34,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
     var panel=document.createElement('div');
-    panel.style.cssText='background:#fff;border-radius:12px;width:min(1000px,96vw);height:min(760px,94vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.4)';
+    panel.style.cssText='background:#fff;border-radius:12px;width:min(1440px,98vw);height:min(940px,96vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.4)';
     panel.innerHTML=
       '<div style="padding:10px 14px;border-bottom:1px solid #e5e9ee;display:flex;align-items:center;gap:10px;font:600 14px sans-serif;color:#1b2733">'
       +'<span>'+esc(icao)+' — Airport Diagram <span id="pwd-src" style="color:#8a97a5;font-weight:500">· loading…</span></span>'
@@ -247,11 +292,13 @@
       +'<a id="pwd-faa" href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="margin-left:auto;font-size:12px;color:#2f6fed;text-decoration:none">Official FAA diagram ↗</a>'
       +'<button id="pwd-x" style="border:0;background:#eef2f5;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:16px;color:#33414f">✕</button></div>'
       +'<div id="pwd-map" style="flex:1;background:#f4f6f8;position:relative"></div>'
-      +'<div id="pwd-foot" style="padding:8px 14px;border-top:1px solid #e5e9ee;font:12px sans-serif;color:#33414f">'
-      +(rk.length?'<b>Closed runways:</b> <span style="color:#c01722;font-weight:700">'+rwStr+'</span> &nbsp;·&nbsp; ':'')
-      +'<b>Closed taxiways:</b> <span style="color:#c01722;font-weight:700">'+(cl.length?cl.join(', '):'none active')+'</span> '
+      +'<div id="pwd-foot" style="padding:8px 14px;border-top:1px solid #e5e9ee;font:12.5px sans-serif;color:#33414f">'
+      +'<b style="color:#1b2733">Closed '+winLabel+':</b> &nbsp;'
+      +(rk.length?'<b>RWY:</b> <span style="color:#c01722;font-weight:700">'+rwStr+'</span> &nbsp;·&nbsp; ':'')
+      +'<b>TWY:</b> <span style="color:#c01722;font-weight:700">'+(cl.length?cl.join(', '):'none')+'</span> '
+      +(otherStr?'<br><b style="color:#8a6d1b">Other times today (not at your ETA):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(otherStr)+'</span> ':'')
       +(schedStr?'<br><b style="color:#8a6d1b">Scheduled (not active '+DOW[NOWDOW]+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(schedStr)+'</span> ':'')
-      +'<span style="color:#8a97a5">· current-day closures only; scheduled/recurring closures listed separately; crossing/taxi exceptions shown dashed; verify against the official diagram &amp; NOTAMs</span></div>';
+      +'<span style="color:#8a97a5">· closures shown for your planned arrival window; other-time &amp; recurring closures listed separately; crossing/taxi exceptions dashed; verify against the official diagram &amp; NOTAMs</span></div>';
     ov.appendChild(panel); document.body.appendChild(ov);
     function close(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }
     panel.querySelector('#pwd-x').onclick=close;
@@ -272,11 +319,12 @@
     function closuresPanel(){
       if(document.getElementById('pwd-clos')) return;
       var d=document.createElement('div'); d.id='pwd-clos';
-      d.style.cssText='position:absolute;left:10px;top:10px;z-index:1200;max-width:min(360px,66%);background:rgba(255,255,255,.96);border:1px solid #e0b6b6;border-left:5px solid '+RED+';border-radius:9px;padding:9px 12px;font:600 13px/1.45 sans-serif;color:#26313c;box-shadow:0 2px 12px rgba(0,0,0,.22)';
-      var h='<div style="font-weight:800;margin-bottom:3px">NOTAM closures — today</div>';
+      d.style.cssText='position:absolute;left:12px;top:12px;z-index:1200;max-width:min(460px,74%);background:rgba(255,255,255,.97);border:1px solid #e0b6b6;border-left:6px solid '+RED+';border-radius:10px;padding:11px 14px;font:600 14.5px/1.5 sans-serif;color:#26313c;box-shadow:0 2px 14px rgba(0,0,0,.24)';
+      var h='<div style="font-weight:800;font-size:15.5px;margin-bottom:4px">NOTAM closures — '+esc(winLabel)+'</div>';
       if(rk.length) h+='<div><span style="color:'+RED+';font-weight:800">RWY:</span> '+esc(rwStr)+'</div>';
-      h+='<div><span style="color:'+RED+';font-weight:800">TWY:</span> '+(cl.length?esc(cl.join(', ')):'<span style="color:#2f7a45">none active</span>')+'</div>';
-      if(schedStr) h+='<div style="color:#8a6d1b;margin-top:3px"><b>Scheduled (not active '+DOW[NOWDOW]+'):</b> '+esc(schedStr)+'</div>';
+      h+='<div><span style="color:'+RED+';font-weight:800">TWY:</span> '+(cl.length?esc(cl.join(', ')):'<span style="color:#2f7a45">none</span>')+'</div>';
+      if(otherStr) h+='<div style="color:#8a6d1b;margin-top:3px;font-size:13px"><b>Other times today:</b> '+esc(otherStr)+'</div>';
+      if(schedStr) h+='<div style="color:#8a6d1b;margin-top:3px;font-size:13px"><b>Scheduled (not active '+DOW[NOWDOW]+'):</b> '+esc(schedStr)+'</div>';
       d.innerHTML=h; mapHost.appendChild(d);
     }
     function linkFallback(msg){ cleanup();
@@ -330,6 +378,7 @@
     function drawNmsClosures(g){
       var pts=[], drew=0;
       (data.items||[]).forEach(function(n){
+        if(isCancel(n) || !inWindow(n)) return;            // skip cancellations + closures outside the arrival window
         if(!(n.closed||n.conditional) || !n.geometry) return;
         var col=n.conditional?AMBER:RED;
         var geoms=n.geometry.geometries||[n.geometry];
