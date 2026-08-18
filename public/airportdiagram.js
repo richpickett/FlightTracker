@@ -26,7 +26,7 @@
     if(t.length>420) t=t.slice(0,420);
     var out=[], m;
     // Pass 1 — segment clauses "TWY <id> BTN <ref1> AND <ref2>". Blank them out afterwards.
-    var refPat='((?:APCH\\s+END\\s+)?(?:RWY|TWY)\\s+[A-Z0-9\\/]+)';
+    var refPat='((?:APCH\\s+END\\s+)?(?:RWY|TWY|GATE)\\s+[A-Z0-9\\/]+)';
     var segRe=new RegExp('\\bTWY\\s+([A-Z]\\d?)\\s+BTN\\s+'+refPat+'\\s+AND\\s+'+refPat,'g');
     var blanked=t;
     while(m=segRe.exec(t)){
@@ -34,7 +34,7 @@
       blanked=blanked.slice(0,m.index)+' '.repeat(m[0].length)+blanked.slice(m.index+m[0].length);
     }
     // Pass 2 — remaining bare "TWY <id>[, id, id]" are whole-taxiway closures.
-    var cleaned=blanked.replace(/\bBTN\b[^,;.]{0,40}\bAND\b\s*(?:RWY|TWY|APCH|APPROACH)[^,;.]{0,18}/g,' ')
+    var cleaned=blanked.replace(/\bBTN\b[^,;.]{0,40}\bAND\b\s*(?:RWY|TWY|APCH|APPROACH|GATE)[^,;.]{0,18}/g,' ')
       .replace(/\b(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST)\s+OF\s+(?:RWY|TWY)\s+[A-Z0-9\/]+/g,' ')  // "<dir> OF TWY A7" = boundary landmark, not a closure
       .replace(/\bAT\s+(?:RWY|TWY)\s+[A-Z0-9\/]+/g,' ');                                                  // "AT TWY B" = location, not a closure
     var wRe=/\bTWY\s+([A-Z]\d?)((?:\s*,\s*[A-Z]\d?(?![A-Z0-9])){0,12})/g;
@@ -325,6 +325,27 @@
           .catch(function(){ renderOsm(); });
       });
     }
+    // Draw NMS closure polygons (authoritative FAA lat/lon geometry) directly — no text→geometry inference,
+    // which is what caused boundary false positives. Used whenever the NOTAMs carry geometry (US mirror).
+    function drawNmsClosures(g){
+      var pts=[], drew=0;
+      (data.items||[]).forEach(function(n){
+        if(!(n.closed||n.conditional) || !n.geometry) return;
+        var col=n.conditional?AMBER:RED;
+        var geoms=n.geometry.geometries||[n.geometry];
+        geoms.forEach(function(gm){
+          if(!gm||!gm.coordinates) return;
+          var polys=gm.type==='Polygon'?[gm.coordinates]:(gm.type==='MultiPolygon'?gm.coordinates:null);
+          if(!polys) return;                                   // Point/LineString: skip (polygon is the closed area)
+          polys.forEach(function(rings){ rings.forEach(function(ring){
+            var ll=ring.map(function(c){ return [c[1],c[0]]; }); if(ll.length<3) return;   // GeoJSON [lon,lat] -> Leaflet [lat,lon]
+            ll.forEach(function(p){ pts.push(p); });
+            L.polygon(ll,{color:col,weight:1.5,opacity:.95,fillColor:col,fillOpacity:.32,interactive:false}).addTo(g); drew++;
+          }); });
+        });
+      });
+      return { pts:pts, drew:drew };
+    }
     // ----- Fallback: OSM geometry, closures pinpointed in red (used for no-FAA fields, or if the chart fails) -----
     function renderOsm(){
       cleanup(); showLoading('Building airport diagram…'); setSrc('· closures highlighted'); curView='osm'; updateToggle('osm');
@@ -342,12 +363,13 @@
       fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
         if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){ linkFallback('Airport diagram is unavailable right now (OSM &amp; FAA chart service).'); return; }
         var bounds=[], notLocated=[];
+        var haveNmsGeom=(data.items||[]).some(function(n){ return (n.closed||n.conditional)&&n.geometry; });
         (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#d7dee6',weight:1,fillColor:'#e7ecf1',fillOpacity:.7,interactive:false}).addTo(g); });
         (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
           L.polyline(tw.c,{color:'#9aa7b4',weight:2,opacity:.9,interactive:false}).addTo(g);
           if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 10px sans-serif',color:'#3a4756',sz:[18,12]})}).addTo(g); }
         });
-        cl.forEach(function(id){
+        if(!haveNmsGeom) cl.forEach(function(id){
           var clauses=twClauses[id], drewSomething=false, whole=clauses.some(function(c){return !c.from||!c.to;});
           var S=mergeWays(twWays(geo,id));
           if(!whole){ clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c);
@@ -360,7 +382,7 @@
         (geo.runways||[]).forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
           var ref=normRwy(rw.ref), rc=closedR[ref] || (function(){ for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })) return closedR[k]; } return null; })();
           L.polyline(rw.c,{color:'#33414f',weight:8,opacity:.95,interactive:false}).addTo(g);
-          if(rc){
+          if(rc && !haveNmsGeom){
             if(rc.kind==='partial' || rc.kind==='displaced'){
               var portion=closedPortion(rw.c, rc);
               if(portion){ L.polyline(portion,{color:AMBER,weight:9,opacity:.97,interactive:false}).addTo(g);
@@ -373,6 +395,7 @@
           }
           if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 11px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[46,14]})}).addTo(g);
         });
+        if(haveNmsGeom){ var nz=drawNmsClosures(g); if(nz.pts.length) bounds=bounds.concat(nz.pts); if(nz.drew) setSrc('· FAA NMS closures'); }
         if(bounds.length) map.fitBounds(bounds,{padding:[14,14]});
         stopLoading(); closuresPanel();
         if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
