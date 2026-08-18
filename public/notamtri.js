@@ -110,6 +110,13 @@
   // A NOTAMC cancellation carries the cancelled closure's text ("RWY x CLSD CANCELED") — drop it entirely.
   function isCancel(n){ var t=(n.text||'').toUpperCase();
     return /\bNOTAMC\b/.test(t) || /\bCANCELL?ED\b/.test(t) || /\bCNL\b/.test(t) || (n.condition||'').toUpperCase()==='XX'; }
+  // A "hard stop" is an actual RWY/TWY closure — not a PAPI/lighting/nav U-S advisory. Only these belong in
+  // the Critical group. Uses the mirror's closed flag when present, else a closure-text check.
+  function isHardStop(n){
+    if(n.closed===true) return true;
+    var t=(n.text||'').toUpperCase();
+    return /\b(RWY|TWY)\b/.test(t) && /\bCLSD\b|\bCLOSED\b/.test(t);
+  }
   // Time status of a NOTAM vs now + the planned arrival window [ETA−1h, ETA+2h].
   function timeStatus(n, etaMs, role){
     var s=n.start?Date.parse(n.start):null, e=n.end?Date.parse(n.end):null, now=Date.now();
@@ -202,8 +209,8 @@
     }
     // 'off' — critical (closures/hard) first, then grouped by facility
     if(!vis.length){ blk.innerHTML=head+'<span class="sub">No NOTAMs match the current filter — adjust the chips above.</span>'; return; }
-    var hard=vis.filter(function(n){return n._c.pri<=1;});
-    var rest=vis.filter(function(n){return n._c.pri>1;});
+    var hard=vis.filter(isHardStop);
+    var rest=vis.filter(function(n){return !isHardStop(n);});
     var h=head;
     if(hard.length){
       h+='<span class="sub" style="color:#c0392b;font-weight:600">⚑ Critical — closures &amp; hard stops ('+hard.length+')</span>';

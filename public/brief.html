@@ -45,7 +45,7 @@
   .bm-lbl{background:#fff;border:1px solid #0b3d91;border-radius:4px;font:700 10px/1.4 Arial;color:#0b2e6b;text-align:center;padding:0 3px;box-shadow:0 1px 2px #0003;white-space:nowrap}
   @media print{ body{background:#fff} .sheet{box-shadow:none;max-width:none} .noprint{display:none!important} .leg{break-inside:avoid} #bmap{height:300px} }
 </style>
-<script src="/wx/route-expand.js"></script><script src="/prog.js?v=3"></script><script src="/notamtri.js?v=8"></script><script src="/airportdiagram.js?v=20"></script></head>
+<script src="/wx/route-expand.js"></script><script src="/prog.js?v=3"></script><script src="/notamtri.js?v=9"></script><script src="/airportdiagram.js?v=21"></script></head>
 <body><div id="pw-gate" style="display:none;position:fixed;inset:0;z-index:2500;background:rgba(20,30,50,.55);align-items:center;justify-content:center">
   <div style="background:#fff;max-width:380px;margin:16px;padding:22px;border-radius:12px;box-shadow:0 10px 40px #0005;text-align:center;font-family:Arial,system-ui,sans-serif">
     <div style="font-weight:700;font-size:17px;color:#0b3d91">Personal Wings</div>
@@ -708,7 +708,7 @@ function renderOneNotam(id){
   var e=NOTAM_RES[id]; if(!e) return; var j=e.j, p=e.p, blk=e.blk;
   if(j.error){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">NOTAMs unavailable ('+nesc(j.error)+(j.detail?' — '+nesc(j.detail):'')+')</span>'; return; }
   var raw=j.notams||[];
-  if(!raw.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no current NOTAMs</span>'; return; }
+  if(!raw.length){ blk.innerHTML='<b>'+p.id+'</b> <span style="color:#889">no current NOTAMs</span>'+(window.PWNotam&&PWNotam.diagLinks?PWNotam.diagLinks(p,[]):''); return; }
   var ref=(isFinite(p.la)&&isFinite(p.lo))?[p.la,p.lo]:null;
   var tri=(window.PWNotam?PWNotam.triage(raw,ref):{items:raw,total:(j.total||raw.length),counts:{cat:{},local:0,regional:0}});
   var arr=tri.items, total=tri.total; e.tri=tri; e._diag=(window.PWNotam&&PWNotam.diagLinks)?PWNotam.diagLinks(p,arr):"";
