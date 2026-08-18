@@ -1,0 +1,5 @@
+# FlightTracker standalone (personalwings-ops): the briefing/nav is shared with the Suite, whose Ops Hub lives
+# at /ops/. This site has no /ops/ — its hub is the root index.html — so map those Suite paths to the root hub
+# instead of 404ing. (Suite deploy is separate and unaffected.)
+/ops     /   302
+/ops/*   /   302
