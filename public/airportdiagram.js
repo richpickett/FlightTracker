@@ -216,6 +216,13 @@
       if(s!=null&&e!=null&&new Date(e).getUTCDate()!==new Date(s).getUTCDate()) t+=' +'+Math.round((e-s)/86400000)+'d';
       return t; }
     function uniqArr(a){ var o={},r=[]; a.forEach(function(x){ if(x&&!o[x]){o[x]=1;r.push(x);} }); return r; }
+    function ended(n){ var e=msOf(n.end); return e!=null && e<NOW; }
+    // Validity label for a drawn closure: reopens within ~36h -> show the UTC time window; longer -> the end date;
+    // open-ended/permanent -> nothing (keeps long-term construction closures uncluttered).
+    var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function validityLabel(s,e,open){ if(open||e==null) return '';
+      if(e-NOW <= 36*3600000) return '['+(s!=null?zhm(s)+'–':'')+zhm(e)+']';
+      var d=new Date(e); return 'thru '+d.getUTCDate()+' '+MON[d.getUTCMonth()]; }
     // Absorb FNS/SWIM schedule loss: group NOTAM instances by identity; a closure is scheduled if ANY sibling carries a schedule.
     // Group by validity window (start|end): FNS drops the schedule text but shares start/end with its scheduled SWIM twin,
     // so grouping on start|end lets the schedule from the twin cover the schedule-less copy.
@@ -227,7 +234,7 @@
       segs.forEach(function(c){
         if(!dayOk){ twInactive[c.twy]=1; return; }
         if(inWindow(n)){ (twClauses[c.twy]=twClauses[c.twy]||[]).push(c); }
-        else { (twOther[c.twy]=twOther[c.twy]||[]).push(winTxt(n)); }
+        else if(!ended(n)){ (twOther[c.twy]=twOther[c.twy]||[]).push(winTxt(n)); }   // upcoming other-time; drop already-ended
       });
     });
     var cl=Object.keys(twClauses).sort();
@@ -255,9 +262,15 @@
       });
       if(!dayActive){ rSched[key]=Object.keys(schedDays).map(function(d){return DOW[d];}).join('/'); return; } // scheduled other day
       var inWin=insts.filter(function(x){ return inWindow(x.n); });
-      if(!inWin.length){ rOther[key]=uniqArr(insts.map(function(x){return winTxt(x.n);})); return; }  // today but not at your ETA
-      var p={kind:null,detail:'',taxiExc:false,xngExc:false,dist:0,dir:'',end:''};
-      inWin.forEach(function(x){ var r=x.r;
+      if(!inWin.length){                                                    // not at your ETA/ETD
+        var up=insts.filter(function(x){ return !ended(x.n); });            // keep only still-upcoming; drop already-ended
+        if(up.length) rOther[key]=uniqArr(up.map(function(x){return winTxt(x.n);}));
+        return;
+      }
+      var p={kind:null,detail:'',taxiExc:false,xngExc:false,dist:0,dir:'',end:'',tStart:null,tEnd:null,tOpen:false};
+      inWin.forEach(function(x){ var r=x.r, s=msOf(x.n.start), e=msOf(x.n.end);
+        if(s!=null && (p.tStart==null||s<p.tStart)) p.tStart=s;             // validity window of the drawn closure
+        if(e==null) p.tOpen=true; else if(p.tEnd==null||e>p.tEnd) p.tEnd=e;
         if(r.kind==='closed'){ p.kind='closed'; if(r.taxiExc)p.taxiExc=true; if(r.xngExc)p.xngExc=true; }
         else if(r.kind==='partial'){ if(p.kind!=='closed'){ p.kind='partial'; p.detail=r.detail; p.dist=r.dist; p.dir=r.dir; } }
         else if(r.kind==='displaced'){ if(!p.kind){ p.kind='displaced'; p.detail=r.detail; p.dist=r.dist; p.end=r.end; } }
@@ -266,10 +279,11 @@
     });
     var rk=Object.keys(closedR).sort();
     function rwLabel(k){ var r=closedR[k];
-      if(r.kind==='partial') return k+' — '+esc(r.detail)+' closed';
-      if(r.kind==='displaced') return k+' — '+esc(r.detail);
+      var vl=validityLabel(r.tStart,r.tEnd,r.tOpen), vs=vl?' '+vl:'';
+      if(r.kind==='partial') return k+' — '+esc(r.detail)+' closed'+vs;
+      if(r.kind==='displaced') return k+' — '+esc(r.detail)+vs;
       var exc=r.taxiExc?' (taxi only)':r.xngExc?' (crossing only)':'';
-      return k+' — closed'+exc; }
+      return k+' — closed'+exc+vs; }
     var rwStr=rk.map(rwLabel).join('; ');
     // "Other times today" — active today but NOT during your arrival window, shown with UTC windows.
     var otherBits=[]; Object.keys(rOther).sort().forEach(function(k){ otherBits.push('RWY '+k+(rOther[k].length?' ('+rOther[k].join(', ')+')':'')); });
@@ -297,7 +311,7 @@
       +'<b style="color:#1b2733">Closed '+winLabel+':</b> &nbsp;'
       +(rk.length?'<b>RWY:</b> <span style="color:#c01722;font-weight:700">'+rwStr+'</span> &nbsp;·&nbsp; ':'')
       +'<b>TWY:</b> <span style="color:#c01722;font-weight:700">'+(cl.length?cl.join(', '):'none')+'</span> '
-      +(otherStr?'<br><b style="color:#8a6d1b">Other times today (not at your '+etaRole+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(otherStr)+'</span> ':'')
+      +(otherStr?'<br><b style="color:#8a6d1b">Other times (not at your '+etaRole+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(otherStr)+'</span> ':'')
       +(schedStr?'<br><b style="color:#8a6d1b">Scheduled (not active '+DOW[NOWDOW]+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(schedStr)+'</span> ':'')
       +'<span style="color:#8a97a5">· closures shown for your planned '+(etaRole==='ETD'?'departure':'arrival')+' window; other-time &amp; recurring closures listed separately; crossing/taxi exceptions dashed; verify against the official diagram &amp; NOTAMs</span></div>';
     ov.appendChild(panel); document.body.appendChild(ov);
@@ -324,7 +338,7 @@
       var h='<div style="font-weight:800;font-size:15.5px;margin-bottom:4px">NOTAM closures — '+esc(winLabel)+'</div>';
       if(rk.length) h+='<div><span style="color:'+RED+';font-weight:800">RWY:</span> '+esc(rwStr)+'</div>';
       h+='<div><span style="color:'+RED+';font-weight:800">TWY:</span> '+(cl.length?esc(cl.join(', ')):'<span style="color:#2f7a45">none</span>')+'</div>';
-      if(otherStr) h+='<div style="color:#8a6d1b;margin-top:3px;font-size:13px"><b>Other times today:</b> '+esc(otherStr)+'</div>';
+      if(otherStr) h+='<div style="color:#8a6d1b;margin-top:3px;font-size:13px"><b>Other times:</b> '+esc(otherStr)+'</div>';
       if(schedStr) h+='<div style="color:#8a6d1b;margin-top:3px;font-size:13px"><b>Scheduled (not active '+DOW[NOWDOW]+'):</b> '+esc(schedStr)+'</div>';
       d.innerHTML=h; mapHost.appendChild(d);
     }

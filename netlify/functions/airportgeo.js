@@ -65,13 +65,20 @@ exports.handler = async (event) => {
   // (406/429/503) fail in <1s and cost nothing; healthy ones win. osm.ch + mail.ru carry heavy queries;
   // the rest are rotating backups (mirror health cycles over time). Re-check with the mirror probe if
   // cold fetches start stalling again.
-  const MIRRORS = ["https://overpass.osm.ch/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter","https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
+  // mail.ru is a reliable full-planet mirror for US aeroways; osm.ch is fast but has been observed serving a
+  // regional extract that returns EMPTY for US airports — the empty-response guard below stops that from winning.
+  const MIRRORS = ["https://maps.mail.ru/osm/tools/overpass/api/interpreter","https://overpass.osm.ch/api/interpreter","https://overpass.private.coffee/api/interpreter","https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
 
   const attempt = (url, ms) => {
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), ms);
-    return fetch(url, { method: "POST", body: "data=" + encodeURIComponent(query), headers: { "Content-Type": "application/x-www-form-urlencoded" }, signal: ctl.signal })
+    return fetch(url, { method: "POST", body: "data=" + encodeURIComponent(query), headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "PersonalWings/1.0 (ops@personalwings.com)" }, signal: ctl.signal })
       .then(r => r.ok ? r.text() : Promise.reject(new Error("http " + r.status)))
-      .then(txt => { if (txt && txt.charAt(0) === "{") return JSON.parse(txt); throw new Error("bad body"); })
+      .then(txt => { if (!txt || txt.charAt(0) !== "{") throw new Error("bad body");
+        const j = JSON.parse(txt);
+        // Reject empty/partial replies (a mirror serving a non-US extract returns valid JSON with no aeroways) so a
+        // mirror WITH real geometry wins the race instead of an empty response poisoning the cache.
+        if (!(j.elements || []).some(el => el.tags && (el.tags.aeroway === "runway" || el.tags.aeroway === "taxiway"))) throw new Error("no aeroways");
+        return j; })
       .finally(() => clearTimeout(to));
   };
 
