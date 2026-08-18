@@ -8,7 +8,7 @@ on:
       mode:
         description: 'incremental | bulk | status'
         type: string
-        default: incremental
+        default: bulk
 permissions:
   contents: read
 concurrency:
