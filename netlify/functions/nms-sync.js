@@ -21,32 +21,60 @@ const CLASSES = (process.env.NMS_CLASSES || "DOMESTIC,INTERNATIONAL,FDC").split(
 function isUS(icao) { icao = (icao || "").toUpperCase(); return /^K[A-Z]{3}$/.test(icao) || /^P[AFGHKLMOPW][A-Z]{2}$/.test(icao) || /^T[IJ][A-Z]{2}$/.test(icao); }
 
 // ---- NMS auth (token cached across warm invocations) ----
+// Transient-failure retry. NMS sits behind an edge/WAF that intermittently 403s
+// requests from shared CI IPs (GitHub Actions), and can also 429/5xx under load.
+// Those are not credential problems — a short backoff clears them. Retryable =
+// 403/408/429/5xx or a network error; 4xx auth errors (401) are NOT retried.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function isTransient(err) {
+  const m = String((err && err.message) || err);
+  return /\b(403|408|429|500|502|503|504)\b/.test(m) || /Forbidden|Too Many|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|fetch failed|network|socket hang/i.test(m);
+}
+async function withRetry(fn, label) {
+  const backoff = [1500, 4000, 9000];   // 3 retries after the first try
+  let last;
+  for (let i = 0; i <= backoff.length; i++) {
+    try { return await fn(); }
+    catch (e) {
+      last = e;
+      if (i === backoff.length || !isTransient(e)) throw e;
+      console.error("nms-sync retry " + (i + 1) + "/" + backoff.length + " (" + label + "): " + String(e.message || e).slice(0, 120));
+      await sleep(backoff[i]);
+    }
+  }
+  throw last;
+}
+
 let _tok = null, _exp = 0;
 async function token() {
   const now = Date.now();
   if (_tok && now < _exp - 60000) return _tok;
   const auth = Buffer.from(CID + ":" + CSECRET).toString("base64");
-  const r = await fetch(NMS_HOST + "/v1/auth/token", {
-    method: "POST",
-    headers: { Authorization: "Basic " + auth, "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=client_credentials"
-  });
-  const t = await r.text();
-  if (!r.ok) throw new Error("token " + r.status + ": " + t.slice(0, 160));
-  const j = JSON.parse(t);
-  _tok = j.access_token; _exp = now + (parseInt(j.expires_in || "1799", 10) * 1000);
-  return _tok;
+  return withRetry(async () => {
+    const r = await fetch(NMS_HOST + "/v1/auth/token", {
+      method: "POST",
+      headers: { Authorization: "Basic " + auth, "Content-Type": "application/x-www-form-urlencoded" },
+      body: "grant_type=client_credentials"
+    });
+    const t = await r.text();
+    if (!r.ok) throw new Error("token " + r.status + ": " + t.slice(0, 160));
+    const j = JSON.parse(t);
+    _tok = j.access_token; _exp = Date.now() + (parseInt(j.expires_in || "1799", 10) * 1000);
+    return _tok;
+  }, "token");
 }
 const zlib = require("zlib");
 async function nmsGet(path) {
+  return withRetry(async () => {
   const t = await token();
   const r = await fetch(NMS_HOST + path, { headers: { Authorization: "Bearer " + t, nmsResponseFormat: "GEOJSON", Accept: "application/json" } });
   let buf = Buffer.from(await r.arrayBuffer());
-  if (!r.ok) throw new Error("nms " + r.status + " " + path + ": " + buf.toString("utf8").slice(0, 200));
+  if (!r.ok) { if (r.status === 401) { _tok = null; _exp = 0; } throw new Error("nms " + r.status + " " + path + ": " + buf.toString("utf8").slice(0, 200)); }
   // Bulk/classification pulls return a gzipped file (not inline JSON) — decompress if gzip-magic present.
   if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) { try { buf = zlib.gunzipSync(buf); } catch (e) {} }
   const txt = buf.toString("utf8");
   try { return JSON.parse(txt); } catch (e) { throw new Error("nms non-json " + path + " ct=" + (r.headers.get("content-type") || "?") + " first=" + JSON.stringify(txt.slice(0, 140))); }
+  }, "nms " + path);
 }
 // Feature list can arrive as {data:{geojson:[]}}, a FeatureCollection {features:[]}, or a bare array.
 function featuresFrom(d) {
@@ -197,6 +225,14 @@ if (require.main === module) {
       else out = await incremental();
       console.log(JSON.stringify(out));
       process.exit(0);
-    } catch (e) { console.error("nms-sync error:", e.message || e); process.exit(1); }
+    } catch (e) {
+      console.error("nms-sync error:", e.message || e);
+      // Incremental runs every N minutes and reads fall back to SkyLink if the mirror
+      // goes briefly stale — so a transient edge/WAF blip (403/429/5xx) that survived the
+      // in-run retries is a soft skip, NOT a job failure (avoids noise notices). The next
+      // run catches up. Bulk (daily) and any non-transient error still fail loudly.
+      if (mode !== "bulk" && isTransient(e)) { console.error("nms-sync: transient failure on '" + mode + "' — skipping this run, next run will catch up."); process.exit(0); }
+      process.exit(1);
+    }
   })();
 }
