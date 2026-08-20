@@ -1,3 +1,32 @@
+/* ---- iOS "Add to Home Screen" coached hint (roadmap #9) ----
+   iOS Safari has NO install prompt; we can only guide the manual Share -> Add to Home Screen.
+   Shows once (dismissible, persisted), only on iOS Safari that is not already installed. */
+(function(){
+  try{
+    var ua = navigator.userAgent || "";
+    var iOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && (navigator.maxTouchPoints||0) > 1);
+    var other = /crios|fxios|edgios|gsa|fban|fbav|instagram|line\//i.test(ua); // Chrome/FF/Edge-iOS + in-app browsers (can't A2HS)
+    var standalone = (navigator.standalone === true) || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+    if (!iOS || other || standalone) return;
+    try { if (localStorage.getItem("pw_a2hs_dismiss") === "1") return; } catch(e){}
+    function show(){
+      if (document.getElementById("pw-a2hs")) return;
+      var share = '<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-3px" aria-hidden="true"><path fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 3v12M8.5 6.5 12 3l3.5 3.5M6 11h-.5A1.5 1.5 0 0 0 4 12.5v6A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 18.5 11H18"/></svg>';
+      var b = document.createElement("div"); b.id = "pw-a2hs";
+      b.style.cssText = "position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:99999;background:#0b3d91;color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 10px 34px rgba(0,0,0,.4);font:500 13.5px/1.45 -apple-system,system-ui,sans-serif;display:flex;align-items:center;gap:11px;max-width:520px;margin:0 auto";
+      b.innerHTML = '<span style="font-size:22px;flex:0 0 auto">📲</span>'
+        + '<div style="flex:1">Add <b>Personal Wings</b> to your Home Screen — tap Share ' + share
+        + ' then <b>Add to Home Screen</b>. Full-screen &amp; stays signed in.</div>'
+        + '<button aria-label="Dismiss" style="flex:0 0 auto;background:rgba(255,255,255,.18);border:none;color:#fff;border-radius:8px;width:30px;height:30px;font-size:16px;line-height:1;cursor:pointer">✕</button>';
+      b.querySelector("button").onclick = function(){ b.remove(); try{ localStorage.setItem("pw_a2hs_dismiss","1"); }catch(e){} };
+      (document.body || document.documentElement).appendChild(b);
+    }
+    function arm(){ setTimeout(show, 1400); }
+    if (document.readyState !== "loading") arm(); else document.addEventListener("DOMContentLoaded", arm);
+  }catch(e){}
+})();
+
+
 /* Personal Wings — accounts + saved routes widget.
    Requires @supabase/supabase-js (v2) loaded before this file, and a page that
    defines window.PW_getState() -> {route, aircraft} and window.PW_applyState(obj). */
@@ -175,7 +204,7 @@
         payload=payload||{};
         var bid=uuid();
         var brief={ briefing_id: bid, user_id: USER?USER.id:null, client_id: clientId(),
-          route_text: payload.route_text||null, waypoint_count: payload.waypoint_count||null, aircraft_reg: payload.aircraft_reg||null, aircraft_type: payload.aircraft_type||null };
+          route_text: payload.route_text||null, waypoint_count: payload.waypoint_count||null, aircraft_reg: payload.aircraft_reg||null };
         SB.from('briefing').insert(brief).then(function(r){
           if(r.error){ res({ok:false,error:r.error.message}); return; }
           var u=payload.usage||{}, want=Object.keys(u).filter(function(c){ return isFinite(+u[c]) && +u[c]>0; });
@@ -195,10 +224,8 @@
       cfg=j||{};
       if(!cfg.supabaseUrl||!window.supabase){ TRIG.textContent='👤 Account (offline)'; return; }
       SB=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
-      window.PW_SB=SB;   // expose the client so pw-entitle.js (pwCan/pwStartTrial) can gate premium features
-      var PW_ping=function(){ try{ SB.rpc('pw_ping',{p_app:'ft'}); }catch(e){} };
-      SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); if(wantRecovery){ startRecovery(); } else { render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER){ fetchProfile(); PW_ping(); if(window.pwTrialBanner) window.pwTrialBanner(SB); } });
-      SB.auth.onAuthStateChange(function(ev,sess){ USER=sess?sess.user:null; upd(); if(ev==='PASSWORD_RECOVERY'){ startRecovery(); } else if(!RECOVERY){ render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER){ fetchProfile(); PW_ping(); if(window.pwTrialBanner) window.pwTrialBanner(SB); } });
+      SB.auth.getUser().then(function(r){ USER=r.data?r.data.user:null; upd(); if(wantRecovery){ startRecovery(); } else { render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER) fetchProfile(); });
+      SB.auth.onAuthStateChange(function(ev,sess){ USER=sess?sess.user:null; upd(); if(ev==='PASSWORD_RECOVERY'){ startRecovery(); } else if(!RECOVERY){ render(); } if(window.PW_onAuth) window.PW_onAuth(!!USER); if(USER) fetchProfile(); });
     }).catch(function(){ TRIG.textContent='👤 Account (offline)'; });
   }
   function upd(){ if(TRIG) TRIG.textContent= USER ? ('◉ '+((USER.user_metadata&&USER.user_metadata.name||USER.email).split('@')[0])) : '👤 Sign in'; }

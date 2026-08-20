@@ -791,9 +791,9 @@ function pwMarkFree(){ try{ document.body.classList.add('pw-free');
 pwMarkFree();
 /* ── Premium gating (suite entitlement via pw-entitle.js) ─────────────────────────
    Food search + AI NOTAM summaries are Suite-Premium. Free users see an inline
-   "Start 7-day free trial" prompt (no card). Truth comes from pwCan() each call. */
-function PW_trialBtn(){ return '<button class="pwTrial" style="border:1px solid #f0d8a8;background:#fff4e0;color:#9a6512;border-radius:6px;padding:3px 9px;font:600 12px system-ui;cursor:pointer">Start 7-day free trial</button>'; }
-function PW_upgradeHTML(label){ return '<div class="sub" style="border:1px solid #f0d8a8;background:#fff7e8;border-radius:8px;padding:9px 11px">🔒 <b>'+label+'</b> is Premium. <b>One plan unlocks everything</b> — AI NOTAM summaries, food &amp; fuel search, closed RWY/TWY diagrams, live-map sharing, and full Atlas history. '+PW_trialBtn()+' <span class="pwTrialMsg"></span><div class="sub" style="margin-top:4px;font-size:11px">7 days free · no credit card · reverts to free automatically</div></div>'; }
+   "Start 30-day free trial" prompt (no card). Truth comes from pwCan() each call. */
+function PW_trialBtn(){ return '<button class="pwTrial" style="border:1px solid #f0d8a8;background:#fff4e0;color:#9a6512;border-radius:6px;padding:3px 9px;font:600 12px system-ui;cursor:pointer">Start 30-day free trial</button>'; }
+function PW_upgradeHTML(label){ return '<div class="sub" style="border:1px solid #f0d8a8;background:#fff7e8;border-radius:8px;padding:9px 11px">🔒 <b>'+label+'</b> is Premium. <b>One plan unlocks everything</b> — AI NOTAM summaries, food &amp; fuel search, closed RWY/TWY diagrams, live-map sharing, and full Atlas history. '+PW_trialBtn()+' <span class="pwTrialMsg"></span><div class="sub" style="margin-top:4px;font-size:11px">30 days free · no credit card · reverts to free automatically</div></div>'; }
 function PW_upgradeInline(label){ return '<span class="ntag" style="background:#c47d12">PREMIUM</span> <span class="sub">'+label+' — '+PW_trialBtn()+' <span class="pwTrialMsg"></span></span>'; }
 function PW_gate(feat, box, label, fn){ var deny=function(){ if(box){ box.className=''; box.innerHTML=PW_upgradeHTML(label); } };
   if(window.pwCan && window.PW_SB){ window.pwCan(window.PW_SB,feat).then(function(ok){ ok?fn():deny(); }, deny); } else deny(); }
@@ -815,7 +815,7 @@ document.addEventListener('click', function(ev){ var t=ev.target; if(!t || !/\bp
     if(r==='ok' || r==='already_premium'){ pwMarkFree(); var rt=((document.getElementById('rin')||{}).value||'').trim();
       if(rt && typeof render==='function'){ render(rt); } else if(msg){ msg.textContent=' Trial active — regenerate the briefing.'; } }
     else { if(msg) msg.textContent=(r==='trial_already_used')?' Trial already used — subscribe to unlock.':' Sign in to start a trial.';
-      t.disabled=false; t.textContent='Start 7-day free trial'; }
+      t.disabled=false; t.textContent='Start 30-day free trial'; }
   }); });
 (function(){ var b=document.getElementById('pw-gate-btn'); if(b) b.onclick=function(){ if(window.PW_toggleAccount) window.PW_toggleAccount(); }; })();
 (function(){var s=document.getElementById('acsel'); if(s) s.addEventListener('change',function(){fleetSelect(this.value);});
