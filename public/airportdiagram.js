@@ -301,11 +301,11 @@
     var panel=document.createElement('div');
     panel.style.cssText='background:#fff;border-radius:12px;width:min(1440px,98vw);height:min(940px,96vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.4)';
     panel.innerHTML=
-      '<div style="padding:6px 12px;border-bottom:1px solid #e5e9ee;display:flex;align-items:center;gap:10px;font:600 13px sans-serif;color:#1b2733">'
-      +'<span>'+esc(icao)+' — Airport Diagram <span id="pwd-src" style="color:#8a97a5;font-weight:500">· loading…</span></span>'
-      +'<button id="pwd-toggle" style="display:none;margin-left:auto;font-size:12px;background:#eef2f5;border:1px solid #d3dbe3;border-radius:6px;padding:4px 10px;cursor:pointer;color:#2f6fed;font-weight:600"></button>'
-      +'<a id="pwd-faa" href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="margin-left:auto;font-size:12px;color:#2f6fed;text-decoration:none">Official FAA diagram ↗</a>'
-      +'<button id="pwd-x" style="border:0;background:#eef2f5;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:16px;color:#33414f">✕</button></div>'
+      '<div style="padding:6px 12px;border-bottom:1px solid #e5e9ee;display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;font:600 13px sans-serif;color:#1b2733">'
+      +'<span style="flex:1 1 auto;min-width:0">'+esc(icao)+' — Airport Diagram <span id="pwd-src" style="color:#8a97a5;font-weight:500">· loading…</span></span>'
+      +'<button id="pwd-toggle" style="display:none;font-size:12px;background:#eef2f5;border:1px solid #d3dbe3;border-radius:6px;padding:6px 11px;min-height:34px;cursor:pointer;color:#2f6fed;font-weight:600"></button>'
+      +'<a id="pwd-faa" href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="font-size:12px;color:#2f6fed;text-decoration:none;display:inline-flex;align-items:center;min-height:34px">FAA diagram ↗</a>'
+      +'<button id="pwd-x" style="border:0;background:#eef2f5;border-radius:6px;width:34px;height:34px;cursor:pointer;font-size:16px;color:#33414f">✕</button></div>'
       +'<div id="pwd-map" style="flex:1;background:#f4f6f8;position:relative"></div>'
       +'<div id="pwd-foot" style="padding:5px 12px;border-top:1px solid #e5e9ee;font:11.5px sans-serif;color:#33414f">'
       +'<b style="color:#1b2733">Closed '+winLabel+':</b> &nbsp;'
@@ -334,7 +334,7 @@
     function closuresPanel(){
       if(document.getElementById('pwd-clos')) return;
       var d=document.createElement('div'); d.id='pwd-clos';
-      d.style.cssText='position:absolute;left:10px;top:10px;z-index:1200;max-width:min(360px,52%);background:rgba(255,255,255,.96);border:1px solid #e0b6b6;border-left:5px solid '+RED+';border-radius:9px;padding:7px 10px;font:600 12.5px/1.4 sans-serif;color:#26313c;box-shadow:0 2px 12px rgba(0,0,0,.2)';
+      d.style.cssText='position:absolute;left:10px;top:10px;z-index:1200;max-width:min(360px,86%);background:rgba(255,255,255,.96);border:1px solid #e0b6b6;border-left:5px solid '+RED+';border-radius:9px;padding:7px 10px;font:600 12.5px/1.4 sans-serif;color:#26313c;box-shadow:0 2px 12px rgba(0,0,0,.2)';
       var h='<div style="font-weight:800;font-size:13px;margin-bottom:3px">NOTAM closures — '+esc(winLabel)+'</div>';
       if(rk.length) h+='<div><span style="color:'+RED+';font-weight:800">RWY:</span> '+esc(rwStr)+'</div>';
       h+='<div><span style="color:'+RED+';font-weight:800">TWY:</span> '+(cl.length?esc(cl.join(', ')):'<span style="color:#2f7a45">none</span>')+'</div>';

@@ -21,19 +21,24 @@
   .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:4px 0} .tscroll>table{width:auto;min-width:100%;margin:0} .tscroll th,.tscroll td{white-space:nowrap}
   .leg{border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:6px;padding:8px 11px;margin:8px 0} .leg.warn{border-left-color:var(--red);background:#fdf2f2}
   .leg h3{margin:0 0 3px;font-size:16.5px;color:var(--blue)} .leg p{margin:2px 0} .fuel{color:#0b6b3a;font-weight:600} .fuel.bad{color:var(--red)} .hw{color:#a15c00} .tw{color:#0b6b3a}
-  .wxrow{padding:9px 0;border-bottom:2px solid #d3dce5} .wxrow>b:first-child{font-size:17px;color:var(--blue);letter-spacing:.3px} #notams>.wxrow{border-bottom:3px solid #93a6ba;padding:12px 0} #notams>.wxrow:last-child{border-bottom:none} .notam-nav{display:flex;flex-wrap:wrap;gap:5px 8px;align-items:center;margin:6px 0 10px;padding:8px 11px;background:#eef4fb;border:1px solid #d3e0ee;border-radius:8px;font:600 13.5px sans-serif} .notam-nav a{color:var(--blue);text-decoration:none;padding:1px 6px;border-radius:5px;border:1px solid #cdddee;background:#fff} .notam-nav a:hover{background:#dcebfb} .badge{display:inline-block;padding:1px 7px;border-radius:5px;color:#fff;font-weight:700;font-size:12px}
+  .wxrow{padding:9px 0;border-bottom:2px solid #d3dce5} .wxrow>b:first-child{font-size:17px;color:var(--blue);letter-spacing:.3px} #notams>.wxrow{border-bottom:3px solid #93a6ba;padding:12px 0} #notams>.wxrow:last-child{border-bottom:none} .notam-nav{display:flex;flex-wrap:wrap;gap:5px 8px;align-items:center;margin:6px 0 10px;padding:8px 11px;background:#eef4fb;border:1px solid #d3e0ee;border-radius:8px;font:600 13.5px sans-serif} .notam-nav a{color:var(--blue);text-decoration:none;padding:6px 10px;border-radius:6px;border:1px solid #cdddee;background:#fff;display:inline-flex;align-items:center;min-height:34px} .notam-nav a:hover{background:#dcebfb} .badge{display:inline-block;padding:1px 7px;border-radius:5px;color:#fff;font-weight:700;font-size:12px}
   .notam-filter{margin:8px 0 12px;padding:9px 11px;background:#f3f7fc;border:1px solid #d3e0ee;border-radius:10px}
   .nf-sec{font:700 11px sans-serif;letter-spacing:.6px;text-transform:uppercase;color:#8494a6;margin:2px 0 6px}
-  .nf-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
-  .nf-chip{cursor:pointer;border:1.5px solid #b9cbe0;background:#fff;color:#5a6b7e;border-radius:16px;padding:5px 12px;font:600 13px sans-serif;line-height:1.1}
+  .nf-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  .nf-chip{cursor:pointer;border:1.5px solid #b9cbe0;background:#fff;color:#5a6b7e;border-radius:18px;padding:8px 13px;font:600 13px sans-serif;line-height:1.15;display:inline-flex;align-items:center;min-height:36px}
   .nf-chip b{font-weight:800;margin-left:2px}
   .nf-chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
   .nf-chip:hover{border-color:var(--blue)}
   .nf-reg{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;background:#e7edf3;color:#8494a6;font-weight:700;font-size:10px;letter-spacing:.4px;vertical-align:middle}
   .nf-time{display:inline-block;margin:0 4px;padding:0 6px;border-radius:4px;color:#fff;font-weight:700;font-size:10.5px;letter-spacing:.3px;vertical-align:middle}
-  .raw{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;color:#243247;display:block;margin-top:2px;white-space:pre-wrap} .taf{color:#0b4a8a}
+  .raw{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px;color:#243247;display:block;margin-top:2px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word} .taf{color:#0b4a8a}
   .onfield{display:inline-block;background:#0b6b3a;color:#fff;font-weight:700;font-size:10px;letter-spacing:.04em;padding:1px 6px;border-radius:4px;margin:0 3px;vertical-align:1px;font-family:system-ui,-apple-system,sans-serif}
   .ntag{display:inline-block;color:#fff;font-weight:700;font-size:11px;letter-spacing:.03em;padding:1px 5px;border-radius:4px;margin-right:5px;vertical-align:1px;font-family:system-ui,-apple-system,sans-serif}
+  .na-head{margin-bottom:3px} .na-head>b{font-size:17px;color:var(--blue);letter-spacing:.3px}
+  .na-meta{display:block;color:#889;font-size:11.5px;margin-top:2px}
+  .na-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .na-links a{display:inline-flex;align-items:center;min-height:34px;padding:6px 10px;border-radius:6px;border:1px solid #cdddee;background:#fff;color:var(--blue);text-decoration:none;font:600 12.5px sans-serif}
+  .na-links a:hover{background:#dcebfb}
   ul{margin:5px 0;padding-left:18px} li{margin:2px 0} a.inline{color:var(--blue)}
   .flag{background:#fff8e6;border:1px solid #e8cf7a;border-radius:6px;padding:7px 10px;margin:6px 0;font-size:13px}
   .foot{color:var(--dim);font-size:11px;margin-top:16px;border-top:1px solid var(--line);padding-top:8px}
@@ -44,9 +49,15 @@
   .mapctl label{display:flex;align-items:center;gap:4px;cursor:pointer} .mapctl input{margin:0}
   .mapctl .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px}
   .bm-lbl{background:#fff;border:1px solid #0b3d91;border-radius:4px;font:700 10px/1.4 Arial;color:#0b2e6b;text-align:center;padding:0 3px;box-shadow:0 1px 2px #0003;white-space:nowrap}
+  @media (max-width:480px){
+    .sheet{padding:14px 12px 48px}
+    .nf-chip{min-height:40px} .notam-nav a{min-height:40px} .na-links a{min-height:40px}
+    li{margin:6px 0;line-height:1.5}
+    h2{margin:20px 0 9px}
+  }
   @media print{ body{background:#fff} .sheet{box-shadow:none;max-width:none} .noprint{display:none!important} .leg{break-inside:avoid} #bmap{height:300px} }
 </style>
-<script src="/wx/route-expand.js"></script><script src="/prog.js?v=3"></script><script src="/notamtri.js?v=9"></script><script src="/airportdiagram.js?v=21"></script></head>
+<script src="/wx/route-expand.js"></script><script src="/prog.js?v=3"></script><script src="/notamtri.js?v=10"></script><script src="/airportdiagram.js?v=22"></script></head>
 <body><div id="pw-gate" style="display:none;position:fixed;inset:0;z-index:2500;background:rgba(20,30,50,.55);align-items:center;justify-content:center">
   <div style="background:#fff;max-width:380px;margin:16px;padding:22px;border-radius:12px;box-shadow:0 10px 40px #0005;text-align:center;font-family:Arial,system-ui,sans-serif">
     <div style="font-weight:700;font-size:17px;color:#0b3d91">Personal Wings</div>

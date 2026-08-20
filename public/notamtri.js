@@ -198,7 +198,8 @@
     var vis=applyFilter(arr), shown=vis.length, hidden=arr.length-shown;
     var etaMs=(typeof w.PW_arrivalMs==='function')?w.PW_arrivalMs(p.id):null;
     var role=(typeof w.PW_timeRole==='function')?w.PW_timeRole(p.id):'ETA';
-    var head='<b>'+p.id+'</b> <span style="color:#889">'+shown+' shown'+(hidden?' · '+hidden+' filtered':'')+' · '+arr.length+' total'+(etaMs!=null?' · '+role+'-aware':'')+'</span>'+diagLinks(p,arr);
+    var _meta=shown+' shown'+(hidden?' · '+hidden+' filtered':'')+' · '+arr.length+' total'+(etaMs!=null?' · '+role+'-aware':'');
+    var head='<div class="na-head"><b>'+p.id+'</b><span class="na-meta">'+_meta+'</span><div class="na-links">'+diagLinks(p,arr).replace(/^\s*·\s*/,'').replace(/\s*·\s*/g,'')+'</div></div>';
     if(mode==='plain'){
       var sigItems=vis.filter(function(n){return n._c.pri<=2;});
       var hp=head;
