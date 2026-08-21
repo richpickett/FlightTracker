@@ -402,6 +402,7 @@
       (data.items||[]).forEach(function(n){
         if(isCancel(n) || !inWindow(n)) return;            // skip cancellations + closures outside the arrival window
         if(!(n.closed||n.conditional) || !n.geometry) return;
+        if(closedRwys(n.text||'').length) return;   // runway closures are drawn authoritatively from FAA runway geometry (paintRunways); skip the NMS polygon so a "CLSD EXC XNG" runway isn't recolored amber
         var col=n.conditional?AMBER:RED;
         var geoms=n.geometry.geometries||[n.geometry];
         geoms.forEach(function(gm){
@@ -429,7 +430,7 @@
       map.setView([data.lat,data.lon],15);
       setTimeout(function(){ try{ map.invalidateSize(); }catch(e){} },80);
       var g=L.layerGroup().addTo(map);
-      var lbl=function(txt,c){ return L.divIcon({className:'',html:'<span style="font:'+(c.f)+';color:'+c.color+';text-shadow:0 0 3px #fff,0 0 3px #fff">'+esc(txt)+'</span>',iconSize:c.sz}); };
+      var lbl=function(txt,c){ return L.divIcon({className:'',html:'<span style="font:'+(c.f)+';color:'+c.color+';text-shadow:-1px -1px 1.5px #fff,1px -1px 1.5px #fff,-1px 1px 1.5px #fff,1px 1px 1.5px #fff,0 0 3px #fff">'+esc(txt)+'</span>',iconSize:c.sz}); };
       var legEl=document.createElement('div');
       legEl.style.cssText='position:absolute;left:10px;bottom:10px;z-index:1200;background:rgba(255,255,255,.95);border:1px solid #cdd6df;border-radius:9px;padding:9px 13px;font:600 14px/1.35 sans-serif;color:#26313c;box-shadow:0 2px 10px rgba(0,0,0,.22)';
       function legRow(color,dash,label){ return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="display:inline-block;width:26px;height:0;border-top:5px '+(dash?'dashed':'solid')+' '+color+'"></span><span>'+label+'</span></div>'; }
@@ -454,7 +455,7 @@
           rwList.forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
             var ref=normRwy(rw.ref), rc=matchRc(ref);
             L.polyline(rw.c,{color:rw.faa?'#dfe9ff':'#f2f6fc',weight:rw.faa?6:5,opacity:rw.faa?.55:.4,interactive:false}).addTo(g);
-            if(rc && !haveNmsGeom){
+            if(rc){
               if(!rw.faa) osmPlaced=true;
               if(rc.kind==='partial' || rc.kind==='displaced'){
                 var portion=closedPortion(rw.c, rc);
