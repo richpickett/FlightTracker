@@ -442,65 +442,74 @@
         w2.innerHTML='⚠ Closure position estimated from OpenStreetMap geometry, which may predate recent runway/taxiway changes. The closed <b>length</b> is from the NOTAM; verify the exact location against the official FAA diagram.';
         mapHost.appendChild(w2);
       }
-      fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
-        if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){
-          // No usable OSM vector geometry (e.g. KDIJ's superseded layout). The satellite base IS the diagram here;
-          // draw the authoritative NMS closure polygons on it and frame the field.
-          var nzb=drawNmsClosures(g);
-          if(nzb.pts && nzb.pts.length){ map.fitBounds(nzb.pts,{padding:[26,26]}); if(nzb.drew) setSrc('· satellite · FAA NMS closures'); }
-          else { map.setView([data.lat,data.lon],15); }
-          stopLoading(); closuresPanel();
-          foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(OSM taxiway/runway vectors unavailable or stale — satellite base; closures from FAA geometry)</span>');
-          return;
-        }
-        var bounds=[], notLocated=[];
-        // Only take the NMS-polygon path when an ACTIVE (in-window, non-cancelled) closure actually carries a
-        // polygon; otherwise (e.g. KEWR — Point-only taxiway closures) draw closures via the OSM text-path.
+      fetch('/.netlify/functions/runways?icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).catch(function(){return {};}).then(function(rwj){
+        // Authoritative FAA NASR runway ends -> anchor runway closures to the REAL threshold (matches Jeppesen),
+        // not stale OSM. Each: {ref:'04/22', c:[[lat,lon],[lat,lon]], ends:[...], faa:true}.
+        var faaRw=(((rwj&&rwj.runways)||[]).map(function(r){ var e=r.ends||[]; if(e.length<2||!e[0]||!e[1]||e[0].lat==null||e[1].lat==null)return null;
+          return { ref:r.ref||r.id, c:[[e[0].lat,e[0].lon],[e[1].lat,e[1].lon]], ends:e, faa:true }; }).filter(Boolean));
+        var bounds=[], notLocated=[], osmPlaced=false;
         var haveNmsGeom=(data.items||[]).some(function(n){ return !isCancel(n) && inWindow(n) && (n.closed||n.conditional) && geomHasPolygon(n.geometry); });
-        var osmPlaced=false;   // set true when a closure is positioned from OSM geometry (may predate airport changes)
-        (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#ffffff',weight:1,opacity:.28,fillColor:'#ffffff',fillOpacity:.09,interactive:false}).addTo(g); });
-        (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
-          L.polyline(tw.c,{color:'#eaf1ff',weight:2,opacity:.5,interactive:false}).addTo(g);
-          if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 10px sans-serif',color:'#3a4756',sz:[18,12]})}).addTo(g); }
-        });
-        if(!haveNmsGeom) cl.forEach(function(id){
-          var clauses=twClauses[id], drewSomething=false, whole=clauses.some(function(c){return !c.from||!c.to;});
-          var S=mergeWays(twWays(geo,id));
-          if(!whole){ clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c);
-            if(seg){ L.polyline(seg,{color:RED,weight:6,opacity:.97,interactive:false}).addTo(g);
-                     L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } }); }
-          if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:RED,weight:5,opacity:.95,interactive:false}).addTo(g);
-            L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
-          if(!drewSomething) notLocated.push('TWY '+id); else osmPlaced=true;
-        });
-        (geo.runways||[]).forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
-          var ref=normRwy(rw.ref), rc=closedR[ref] || (function(){ for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })) return closedR[k]; } return null; })();
-          L.polyline(rw.c,{color:'#f2f6fc',weight:5,opacity:.4,interactive:false}).addTo(g);
-          if(rc && !haveNmsGeom){
-            osmPlaced=true;
-            if(rc.kind==='partial' || rc.kind==='displaced'){
-              var portion=closedPortion(rw.c, rc);
-              if(portion){ L.polyline(portion,{color:AMBER,weight:9,opacity:.97,interactive:false}).addTo(g);
-                L.polyline(portion,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g);
-                if(rc.kind==='displaced'){ var thr=portion[portion.length-1]; L.circleMarker(thr,{radius:5,color:'#fff',weight:2,fillColor:AMBER,fillOpacity:1,interactive:false}).addTo(g); }
-              } else { L.polyline(rw.c,{color:AMBER,weight:9,opacity:.9,interactive:false}).addTo(g); }
-            } else if(rc.taxiExc || rc.xngExc){ L.polyline(rw.c,{color:RED,weight:6,opacity:.95,dashArray:'14 10',interactive:false}).addTo(g); }
-            else { L.polyline(rw.c,{color:RED,weight:9,opacity:.96,interactive:false}).addTo(g);
-              L.polyline(rw.c,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g); }
+        function matchRc(ref){ return closedR[ref] || (function(){ for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })) return closedR[k]; } return null; })(); }
+        function paintRunways(rwList){
+          rwList.forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
+            var ref=normRwy(rw.ref), rc=matchRc(ref);
+            L.polyline(rw.c,{color:rw.faa?'#dfe9ff':'#f2f6fc',weight:rw.faa?6:5,opacity:rw.faa?.55:.4,interactive:false}).addTo(g);
+            if(rc && !haveNmsGeom){
+              if(!rw.faa) osmPlaced=true;
+              if(rc.kind==='partial' || rc.kind==='displaced'){
+                var portion=closedPortion(rw.c, rc);
+                if(portion){ L.polyline(portion,{color:AMBER,weight:9,opacity:.97,interactive:false}).addTo(g);
+                  L.polyline(portion,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g);
+                  if(rc.kind==='displaced'){ var thr=portion[portion.length-1]; L.circleMarker(thr,{radius:5,color:'#fff',weight:2,fillColor:AMBER,fillOpacity:1,interactive:false}).addTo(g); }
+                } else { L.polyline(rw.c,{color:AMBER,weight:9,opacity:.9,interactive:false}).addTo(g); }
+              } else if(rc.taxiExc || rc.xngExc){ L.polyline(rw.c,{color:RED,weight:6,opacity:.95,dashArray:'14 10',interactive:false}).addTo(g); }
+              else { L.polyline(rw.c,{color:RED,weight:9,opacity:.96,interactive:false}).addTo(g);
+                L.polyline(rw.c,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g); }
+            }
+            if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 11px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[46,14]})}).addTo(g);
+          });
+        }
+        fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
+          var geoEmpty=(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length));
+          if(geoEmpty){
+            if(faaRw.length) paintRunways(faaRw);
+            var nzb=drawNmsClosures(g); if(nzb.pts && nzb.pts.length) bounds=bounds.concat(nzb.pts);
+            if(bounds.length) map.fitBounds(bounds,{padding:[26,26]}); else map.setView([data.lat,data.lon],15);
+            setSrc(faaRw.length?'· satellite · FAA runways + closures':'· satellite · FAA NMS closures');
+            stopLoading(); closuresPanel(); if(osmPlaced) osmWarn();
+            foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">('+(faaRw.length?'runways from FAA NASR (authoritative)':'OSM taxiway/runway vectors unavailable or stale')+' — satellite base; closures from FAA geometry)</span>');
+            return;
           }
-          if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 11px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[46,14]})}).addTo(g);
+          (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#ffffff',weight:1,opacity:.28,fillColor:'#ffffff',fillOpacity:.09,interactive:false}).addTo(g); });
+          (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
+            L.polyline(tw.c,{color:'#eaf1ff',weight:2,opacity:.5,interactive:false}).addTo(g);
+            if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 10px sans-serif',color:'#3a4756',sz:[18,12]})}).addTo(g); }
+          });
+          if(!haveNmsGeom) cl.forEach(function(id){
+            var clauses=twClauses[id], drewSomething=false, whole=clauses.some(function(c){return !c.from||!c.to;});
+            var S=mergeWays(twWays(geo,id));
+            if(!whole){ clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c);
+              if(seg){ L.polyline(seg,{color:RED,weight:6,opacity:.97,interactive:false}).addTo(g);
+                       L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } }); }
+            if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:RED,weight:5,opacity:.95,interactive:false}).addTo(g);
+              L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
+            if(!drewSomething) notLocated.push('TWY '+id); else osmPlaced=true;
+          });
+          paintRunways(faaRw.length ? faaRw : (geo.runways||[]).map(function(rw){ return {ref:rw.ref,c:rw.c,faa:false}; }));
+          if(faaRw.length && !haveNmsGeom) setSrc('· satellite · FAA runways');
+          if(haveNmsGeom){ var nz=drawNmsClosures(g); if(nz.pts.length) bounds=bounds.concat(nz.pts); if(nz.drew) setSrc('· satellite · FAA NMS closures'); }
+          if(bounds.length) map.fitBounds(bounds,{padding:[6,6]});
+          stopLoading(); closuresPanel();
+          if(osmPlaced) osmWarn();
+          if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
+        }).catch(function(){
+          // OSM geometry unreachable — keep satellite; still draw FAA runways + authoritative closures.
+          if(faaRw.length) paintRunways(faaRw);
+          var nzc=drawNmsClosures(g); if(nzc.pts && nzc.pts.length) bounds=bounds.concat(nzc.pts);
+          if(bounds.length) map.fitBounds(bounds,{padding:[26,26]}); else map.setView([data.lat,data.lon],15);
+          stopLoading(); closuresPanel(); if(osmPlaced) osmWarn();
+          foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">('+(faaRw.length?'runways from FAA NASR':'OSM geometry service unreachable')+' — satellite base; closures from FAA geometry)</span>');
         });
-        if(haveNmsGeom){ var nz=drawNmsClosures(g); if(nz.pts.length) bounds=bounds.concat(nz.pts); if(nz.drew) setSrc('· satellite · FAA NMS closures'); }
-        if(bounds.length) map.fitBounds(bounds,{padding:[6,6]});
-        stopLoading(); closuresPanel();
-        if(osmPlaced) osmWarn();
-        if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
-      }).catch(function(){
-        // OSM geometry service unreachable — keep the satellite base and draw the authoritative NMS closures on it.
-        var nzc=drawNmsClosures(g);
-        if(nzc.pts && nzc.pts.length) map.fitBounds(nzc.pts,{padding:[26,26]}); else map.setView([data.lat,data.lon],15);
-        stopLoading(); closuresPanel();
-        foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(OSM geometry service unreachable — satellite base; closures from FAA geometry)</span>');
       });
     }
     // Kick off: FAA preferred; OSM fallback when there's no FAA diagram (e.g. KDIJ) or the chart fails.
