@@ -323,7 +323,7 @@
     var RED='#d61f26', AMBER='#e8871e';
     var mapHost=panel.querySelector('#pwd-map'), foot=panel.querySelector('#pwd-foot'), srcLbl=panel.querySelector('#pwd-src'), curMap=null;
     var faaUrl=null, curView=null, toggleBtn=panel.querySelector('#pwd-toggle');
-    function updateToggle(v){ if(!toggleBtn) return; if(!faaUrl){ toggleBtn.style.display='none'; return; } toggleBtn.style.display=''; toggleBtn.textContent=(v==='faa')?'▤ Show NOTAMs on map':'■ FAA chart'; }
+    function updateToggle(v){ if(!toggleBtn) return; if(!faaUrl){ toggleBtn.style.display='none'; return; } toggleBtn.style.display=''; toggleBtn.textContent=(v==='faa')?'🛰 Satellite + closures':'▤ FAA chart'; }
     if(toggleBtn) toggleBtn.onclick=function(){ if(curView==='faa') renderOsm(); else if(faaUrl) renderFaa(faaUrl); };
     if(!document.getElementById('pw-spin-style')){ var st=document.createElement('style'); st.id='pw-spin-style'; st.textContent='@keyframes pwspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
     function cleanup(){ if(curMap){ try{ curMap.remove(); }catch(e){} curMap=null; } try{ if(mapHost._leaflet_id) delete mapHost._leaflet_id; }catch(e){} mapHost.innerHTML=''; }
@@ -419,10 +419,14 @@
     }
     // ----- Fallback: OSM geometry, closures pinpointed in red (used for no-FAA fields, or if the chart fails) -----
     function renderOsm(){
-      cleanup(); showLoading('Building airport diagram…'); setSrc('· closures highlighted'); curView='osm'; updateToggle('osm');
-      var map=L.map(mapHost,{zoomControl:false,attributionControl:false}); curMap=map;
+      cleanup(); showLoading('Building airport diagram…'); setSrc('· satellite · closures'); curView='osm'; updateToggle('osm');
+      var map=L.map(mapHost,{zoomControl:false,attributionControl:true}); curMap=map;
       L.control.zoom({position:'topright'}).addTo(map);
-      map.setView([data.lat,data.lon],14);
+      try{ map.attributionControl.setPrefix(''); }catch(e){}
+      // Georeferenced aerial base = current ground truth. OSM vector geometry (drawn faintly below) can be stale or
+      // from a superseded airport layout (e.g. KDIJ), so imagery is the base and authoritative FAA/NMS closures draw on top.
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,maxNativeZoom:19,attribution:'Imagery © Esri'}).addTo(map);
+      map.setView([data.lat,data.lon],15);
       setTimeout(function(){ try{ map.invalidateSize(); }catch(e){} },80);
       var g=L.layerGroup().addTo(map);
       var lbl=function(txt,c){ return L.divIcon({className:'',html:'<span style="font:'+(c.f)+';color:'+c.color+';text-shadow:0 0 3px #fff,0 0 3px #fff">'+esc(txt)+'</span>',iconSize:c.sz}); };
@@ -432,14 +436,23 @@
       legEl.innerHTML='<div style="font-weight:800;font-size:14px;margin-bottom:5px">Closures</div>'+legRow(RED,false,'Closed (RWY / TWY)')+legRow(AMBER,false,'Closed portion / displaced')+legRow(RED,true,'Taxi / crossing only');
       mapHost.appendChild(legEl);
       fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
-        if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){ linkFallback('Airport diagram is unavailable right now (OSM &amp; FAA chart service).'); return; }
+        if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){
+          // No usable OSM vector geometry (e.g. KDIJ's superseded layout). The satellite base IS the diagram here;
+          // draw the authoritative NMS closure polygons on it and frame the field.
+          var nzb=drawNmsClosures(g);
+          if(nzb.pts && nzb.pts.length){ map.fitBounds(nzb.pts,{padding:[26,26]}); if(nzb.drew) setSrc('· satellite · FAA NMS closures'); }
+          else { map.setView([data.lat,data.lon],15); }
+          stopLoading(); closuresPanel();
+          foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(OSM taxiway/runway vectors unavailable or stale — satellite base; closures from FAA geometry)</span>');
+          return;
+        }
         var bounds=[], notLocated=[];
         // Only take the NMS-polygon path when an ACTIVE (in-window, non-cancelled) closure actually carries a
         // polygon; otherwise (e.g. KEWR — Point-only taxiway closures) draw closures via the OSM text-path.
         var haveNmsGeom=(data.items||[]).some(function(n){ return !isCancel(n) && inWindow(n) && (n.closed||n.conditional) && geomHasPolygon(n.geometry); });
-        (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#d7dee6',weight:1,fillColor:'#e7ecf1',fillOpacity:.7,interactive:false}).addTo(g); });
+        (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#ffffff',weight:1,opacity:.28,fillColor:'#ffffff',fillOpacity:.09,interactive:false}).addTo(g); });
         (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
-          L.polyline(tw.c,{color:'#9aa7b4',weight:2,opacity:.9,interactive:false}).addTo(g);
+          L.polyline(tw.c,{color:'#eaf1ff',weight:2,opacity:.5,interactive:false}).addTo(g);
           if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 10px sans-serif',color:'#3a4756',sz:[18,12]})}).addTo(g); }
         });
         if(!haveNmsGeom) cl.forEach(function(id){
@@ -454,7 +467,7 @@
         });
         (geo.runways||[]).forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
           var ref=normRwy(rw.ref), rc=closedR[ref] || (function(){ for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })) return closedR[k]; } return null; })();
-          L.polyline(rw.c,{color:'#33414f',weight:8,opacity:.95,interactive:false}).addTo(g);
+          L.polyline(rw.c,{color:'#f2f6fc',weight:5,opacity:.4,interactive:false}).addTo(g);
           if(rc && !haveNmsGeom){
             if(rc.kind==='partial' || rc.kind==='displaced'){
               var portion=closedPortion(rw.c, rc);
@@ -468,11 +481,17 @@
           }
           if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 11px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[46,14]})}).addTo(g);
         });
-        if(haveNmsGeom){ var nz=drawNmsClosures(g); if(nz.pts.length) bounds=bounds.concat(nz.pts); if(nz.drew) setSrc('· FAA NMS closures'); }
+        if(haveNmsGeom){ var nz=drawNmsClosures(g); if(nz.pts.length) bounds=bounds.concat(nz.pts); if(nz.drew) setSrc('· satellite · FAA NMS closures'); }
         if(bounds.length) map.fitBounds(bounds,{padding:[6,6]});
         stopLoading(); closuresPanel();
         if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
-      }).catch(function(){ linkFallback('Airport diagram is unavailable right now.'); });
+      }).catch(function(){
+        // OSM geometry service unreachable — keep the satellite base and draw the authoritative NMS closures on it.
+        var nzc=drawNmsClosures(g);
+        if(nzc.pts && nzc.pts.length) map.fitBounds(nzc.pts,{padding:[26,26]}); else map.setView([data.lat,data.lon],15);
+        stopLoading(); closuresPanel();
+        foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(OSM geometry service unreachable — satellite base; closures from FAA geometry)</span>');
+      });
     }
     // Kick off: FAA preferred; OSM fallback when there's no FAA diagram (e.g. KDIJ) or the chart fails.
     showLoading('Loading airport diagram…');
