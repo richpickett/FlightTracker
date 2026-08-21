@@ -435,6 +435,13 @@
       function legRow(color,dash,label){ return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="display:inline-block;width:26px;height:0;border-top:5px '+(dash?'dashed':'solid')+' '+color+'"></span><span>'+label+'</span></div>'; }
       legEl.innerHTML='<div style="font-weight:800;font-size:14px;margin-bottom:5px">Closures</div>'+legRow(RED,false,'Closed (RWY / TWY)')+legRow(AMBER,false,'Closed portion / displaced')+legRow(RED,true,'Taxi / crossing only');
       mapHost.appendChild(legEl);
+      function osmWarn(){
+        if(mapHost.querySelector('#pwd-osmwarn')) return;
+        var w2=document.createElement('div'); w2.id='pwd-osmwarn';
+        w2.style.cssText='position:absolute;left:50%;top:10px;transform:translateX(-50%);z-index:1300;max-width:min(560px,90%);background:#fff4e0;border:1px solid #e6b45a;color:#7a4d05;border-radius:9px;padding:8px 12px;font:600 12.5px/1.35 sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.22);text-align:center';
+        w2.innerHTML='⚠ Closure position estimated from OpenStreetMap geometry, which may predate recent runway/taxiway changes. The closed <b>length</b> is from the NOTAM; verify the exact location against the official FAA diagram.';
+        mapHost.appendChild(w2);
+      }
       fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
         if(!geo || geo.error || (!(geo.taxiways||[]).length && !(geo.runways||[]).length)){
           // No usable OSM vector geometry (e.g. KDIJ's superseded layout). The satellite base IS the diagram here;
@@ -450,6 +457,7 @@
         // Only take the NMS-polygon path when an ACTIVE (in-window, non-cancelled) closure actually carries a
         // polygon; otherwise (e.g. KEWR — Point-only taxiway closures) draw closures via the OSM text-path.
         var haveNmsGeom=(data.items||[]).some(function(n){ return !isCancel(n) && inWindow(n) && (n.closed||n.conditional) && geomHasPolygon(n.geometry); });
+        var osmPlaced=false;   // set true when a closure is positioned from OSM geometry (may predate airport changes)
         (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#ffffff',weight:1,opacity:.28,fillColor:'#ffffff',fillOpacity:.09,interactive:false}).addTo(g); });
         (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
           L.polyline(tw.c,{color:'#eaf1ff',weight:2,opacity:.5,interactive:false}).addTo(g);
@@ -463,12 +471,13 @@
                      L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } }); }
           if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:RED,weight:5,opacity:.95,interactive:false}).addTo(g);
             L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
-          if(!drewSomething) notLocated.push('TWY '+id);
+          if(!drewSomething) notLocated.push('TWY '+id); else osmPlaced=true;
         });
         (geo.runways||[]).forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
           var ref=normRwy(rw.ref), rc=closedR[ref] || (function(){ for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })) return closedR[k]; } return null; })();
           L.polyline(rw.c,{color:'#f2f6fc',weight:5,opacity:.4,interactive:false}).addTo(g);
           if(rc && !haveNmsGeom){
+            osmPlaced=true;
             if(rc.kind==='partial' || rc.kind==='displaced'){
               var portion=closedPortion(rw.c, rc);
               if(portion){ L.polyline(portion,{color:AMBER,weight:9,opacity:.97,interactive:false}).addTo(g);
@@ -484,6 +493,7 @@
         if(haveNmsGeom){ var nz=drawNmsClosures(g); if(nz.pts.length) bounds=bounds.concat(nz.pts); if(nz.drew) setSrc('· satellite · FAA NMS closures'); }
         if(bounds.length) map.fitBounds(bounds,{padding:[6,6]});
         stopLoading(); closuresPanel();
+        if(osmPlaced) osmWarn();
         if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
       }).catch(function(){
         // OSM geometry service unreachable — keep the satellite base and draw the authoritative NMS closures on it.
