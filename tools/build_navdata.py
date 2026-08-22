@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Personal Wings nav-data builder.
 Downloads the current FAA CIFP (ARINC 424) cycle and regenerates
-  public/wx/navaids.json  fixes.json  airways.json  procedures.json
+  navaids.json  fixes.json  airways.json  procedures.json
 Run each 28-day AIRAC cycle:  python3 tools/build_navdata.py [YYMMDD]
 If no cycle is given, it probes backward from today for the latest published cycle.
 Requires: python3, curl, unzip. US-only (area code 'USA')."""
 import json, os, sys, subprocess, tempfile, datetime
 BASE="https://aeronav.faa.gov/Upload_313-d/CIFP/CIFP_%s.zip"
-OUT=os.path.join(os.path.dirname(__file__),"..","public","wx")
+# Output dir. The Suite keeps nav-data SOURCE in src/backbone/wx (build_suite.py copies it to public/wx at deploy);
+# FlightTracker serves public/wx directly. Auto-detect so the SAME script works unchanged in both repos.
+_REPO=os.path.join(os.path.dirname(__file__),"..")
+_SRC=os.path.join(_REPO,"src","backbone","wx")
+OUT=_SRC if os.path.isdir(_SRC) else os.path.join(_REPO,"public","wx")
 
 def http_ok(url):
     r=subprocess.run(["curl","-s","-m","20","-o","/dev/null","-w","%{http_code}",url],capture_output=True,text=True)
@@ -96,6 +100,6 @@ def main():
         f=[os.path.join(td,x) for x in os.listdir(td) if x.upper().startswith("FAACIFP")]
         if not f: sys.exit("FAACIFP file not found in archive")
         build(f[0])
-    print("done. Commit public/wx/*.json and deploy.")
+    print("done. Commit the regenerated *.json under %s and deploy."%os.path.relpath(OUT,_REPO))
 
 if __name__=="__main__": main()
