@@ -18,6 +18,19 @@
     if(m) return {type:'twy',id:m[1]};
     return null;
   }
+  // Aircraft-conditional restriction, e.g. "CLSD TO ACFT WINGSPAN MORE THAN 214FT" / weight limits. These are NOT
+  // hard closures — they only bar oversized/heavy aircraft — so we surface them as an AMBER advisory, not a red
+  // closure. Given a short tail of text after the CLSD, say whether it's such a restriction + a compact phrase.
+  function condIsRestrict(s){ s=(s||'').toUpperCase();
+    return /\bTO\s+ACFT\b|\bWINGSPAN\b|\bMORE\s+THAN\s+\d+\s*FT\b|\bOVER\s+\d+\s*(?:LB|LBS|KG)\b|\bGROSS\s+WEIGHT\b/.test(s); }
+  function condPhrase(s){ s=(s||'').toUpperCase(); var m;
+    if(m=s.match(/WINGSPAN\s+MORE\s+THAN\s+(\d+)\s*FT/)) return 'wingspan >'+m[1]+'ft';
+    if(m=s.match(/MORE\s+THAN\s+(\d+)\s*FT\b[^.]{0,10}WINGSPAN/)) return 'wingspan >'+m[1]+'ft';
+    if(m=s.match(/OVER\s+(\d+)\s*(LB|LBS|KG)/)) return '>'+m[1]+' '+m[2].toLowerCase();
+    if(/GROSS\s+WEIGHT/.test(s)) return 'weight limit';
+    if(/TO\s+ACFT/.test(s)) return 'acft restriction';
+    return 'restriction'; }
+
   // Closed taxiways as clauses: {twy, from, to}  (from/to = boundRef or null => whole taxiway closed)
   function closedTwySegs(text){
     var t=(text||'').toUpperCase();
@@ -30,7 +43,8 @@
     var segRe=new RegExp('\\bTWY\\s+([A-Z]\\d?)\\s+BTN\\s+'+refPat+'\\s+AND\\s+'+refPat,'g');
     var blanked=t;
     while(m=segRe.exec(t)){
-      out.push({twy:m[1],from:boundRef(m[2]),to:boundRef(m[3])});
+      var tailS=t.slice(m.index, m.index+m[0].length+48), cS=condIsRestrict(tailS);
+      out.push({twy:m[1],from:boundRef(m[2]),to:boundRef(m[3]),cond:cS,detail:cS?condPhrase(tailS):''});
       blanked=blanked.slice(0,m.index)+' '.repeat(m[0].length)+blanked.slice(m.index+m[0].length);
     }
     // Pass 2 — remaining bare "TWY <id>[, id, id]" are whole-taxiway closures.
@@ -40,7 +54,8 @@
     var wRe=/\bTWY\s+([A-Z]\d?)((?:\s*,\s*[A-Z]\d?(?![A-Z0-9])){0,12})/g;
     while(m=wRe.exec(cleaned)){
       var ids=[m[1]]; if(m[2]){ (m[2].match(/[A-Z]\d?/g)||[]).forEach(function(x){ids.push(x);}); }
-      ids.forEach(function(id){ out.push({twy:id,from:null,to:null}); });
+      var tailW=cleaned.slice(m.index, m.index+m[0].length+48), cW=condIsRestrict(tailW), dW=cW?condPhrase(tailW):'';
+      ids.forEach(function(id){ out.push({twy:id,from:null,to:null,cond:cW,detail:dW}); });
     }
     return out;
   }
@@ -68,7 +83,9 @@
       out.push({rwy:m[1],kind:'partial',detail:q.replace(/FT/,' FT').replace(/\s+/g,' ').trim(),dist:parseInt(m[3],10),dir:dm?dm[1]:'',end:endRef,taxiExc:false}); }
     // full / exception closure: "RWY <id> CLSD [EXC TAX... | EXC XNG]"  (XNG = crossing permitted)
     var rf=new RegExp('\\bRWY\\s+'+rid+'\\s+CLSD\\b(?:\\s+EXC\\s+(TAX\\w*|XNG))?','g');
-    while(m=rf.exec(cleaned)){ var e=m[2]||''; out.push({rwy:m[1],kind:'closed',detail:'',dist:0,dir:'',end:'',taxiExc:/TAX/.test(e),xngExc:/XNG/.test(e)}); }
+    while(m=rf.exec(cleaned)){ var e=m[2]||'';
+      var rtail=cleaned.slice(m.index, m.index+m[0].length+48), rc=(!e && condIsRestrict(rtail));   // aircraft-conditional (wingspan/weight) => advisory, not a hard closure
+      out.push({rwy:m[1],kind:'closed',detail:rc?condPhrase(rtail):'',dist:0,dir:'',end:'',taxiExc:/TAX/.test(e),xngExc:/XNG/.test(e),cond:rc}); }
     return out;
   }
   // Recurring schedule in a NOTAM's E-line: day-of-week set and/or DLY. Null => continuous (no schedule).
@@ -238,6 +255,12 @@
       });
     });
     var cl=Object.keys(twClauses).sort();
+    // A taxiway is advisory (amber) only if EVERY in-window clause for it is an aircraft restriction; one real
+    // closure clause makes the whole taxiway a hard (red) closure.
+    var twCond={}; cl.forEach(function(id){ var cs=twClauses[id]; twCond[id]=cs.length>0 && cs.every(function(c){return c.cond;}); });
+    var clHard=cl.filter(function(id){return !twCond[id];});   // real closures (red)
+    var clAdv =cl.filter(function(id){return twCond[id];});    // aircraft restrictions (amber advisory)
+    function twCondDetail(id){ var cs=twClauses[id]||[]; for(var i=0;i<cs.length;i++){ if(cs[i].detail) return cs[i].detail; } return 'restriction'; }
     var twOtherIds=Object.keys(twOther).filter(function(id){return !twClauses[id];}).sort();
     var twSchedOnly=Object.keys(twInactive).filter(function(id){return !twClauses[id]&&!twOther[id];}).sort();
     // ----- runways: active-in-window / other-times-today / scheduled-other-day -----
@@ -267,24 +290,29 @@
         if(up.length) rOther[key]=uniqArr(up.map(function(x){return winTxt(x.n);}));
         return;
       }
-      var p={kind:null,detail:'',taxiExc:false,xngExc:false,dist:0,dir:'',end:'',tStart:null,tEnd:null,tOpen:false};
+      var p={kind:null,detail:'',taxiExc:false,xngExc:false,dist:0,dir:'',end:'',tStart:null,tEnd:null,tOpen:false,condTxt:''};
+      var anyHard=false, anyCond=false;
       inWin.forEach(function(x){ var r=x.r, s=msOf(x.n.start), e=msOf(x.n.end);
         if(s!=null && (p.tStart==null||s<p.tStart)) p.tStart=s;             // validity window of the drawn closure
         if(e==null) p.tOpen=true; else if(p.tEnd==null||e>p.tEnd) p.tEnd=e;
-        if(r.kind==='closed'){ p.kind='closed'; if(r.taxiExc)p.taxiExc=true; if(r.xngExc)p.xngExc=true; }
-        else if(r.kind==='partial'){ if(p.kind!=='closed'){ p.kind='partial'; p.detail=r.detail; p.dist=r.dist; p.dir=r.dir; } }
-        else if(r.kind==='displaced'){ if(!p.kind){ p.kind='displaced'; p.detail=r.detail; p.dist=r.dist; p.end=r.end; } }
+        if(r.kind==='closed'){ p.kind='closed'; if(r.cond){ anyCond=true; if(!p.condTxt) p.condTxt=r.detail; } else { anyHard=true; if(r.taxiExc)p.taxiExc=true; if(r.xngExc)p.xngExc=true; } }
+        else if(r.kind==='partial'){ anyHard=true; if(p.kind!=='closed'){ p.kind='partial'; p.detail=r.detail; p.dist=r.dist; p.dir=r.dir; } }
+        else if(r.kind==='displaced'){ anyHard=true; if(!p.kind){ p.kind='displaced'; p.detail=r.detail; p.dist=r.dist; p.end=r.end; } }
       });
+      if(p.kind==='closed' && !anyHard && anyCond){ p.kind='cond'; p.detail=p.condTxt; }   // only an aircraft restriction => amber advisory, not a hard closure
       closedR[key]=p;
     });
     var rk=Object.keys(closedR).sort();
+    var rkHard=rk.filter(function(k){return closedR[k].kind!=='cond';});   // real closures (red)
+    var rkAdv =rk.filter(function(k){return closedR[k].kind==='cond';});   // aircraft restrictions (amber advisory)
     function rwLabel(k){ var r=closedR[k];
       var vl=validityLabel(r.tStart,r.tEnd,r.tOpen), vs=vl?' '+vl:'';
+      if(r.kind==='cond') return k+' — '+esc(r.detail||'restriction')+vs;
       if(r.kind==='partial') return k+' — '+esc(r.detail)+' closed'+vs;
       if(r.kind==='displaced') return k+' — '+esc(r.detail)+vs;
       var exc=r.taxiExc?' (taxi only)':r.xngExc?' (crossing only)':'';
       return k+' — closed'+exc+vs; }
-    var rwStr=rk.map(rwLabel).join('; ');
+    var rwStr=rkHard.map(rwLabel).join('; ');
     // "Other times today" — active today but NOT during your arrival window, shown with UTC windows.
     var otherBits=[]; Object.keys(rOther).sort().forEach(function(k){ otherBits.push('RWY '+k+(rOther[k].length?' ('+rOther[k].join(', ')+')':'')); });
     twOtherIds.forEach(function(id){ otherBits.push('TWY '+id+(twOther[id].length?' ('+uniqArr(twOther[id]).join(', ')+')':'')); });
@@ -293,6 +321,11 @@
     var schedBits=[]; Object.keys(rSched).sort().forEach(function(k){ schedBits.push('RWY '+k+(rSched[k]?' ('+rSched[k]+')':'')); });
     twSchedOnly.forEach(function(id){ schedBits.push('TWY '+id); });
     var schedStr=schedBits.join(', ');
+    // Advisory (amber): aircraft-conditional restrictions active in-window — surfaced for completeness, distinct
+    // from hard closures. Not drawn as a red closure; drawn amber and listed here.
+    var advBits=[]; rkAdv.forEach(function(k){ advBits.push('RWY '+k+(closedR[k].detail?' ('+closedR[k].detail+')':'')); });
+    clAdv.forEach(function(id){ var d=twCondDetail(id); advBits.push('TWY '+id+(d?' ('+d+')':'')); });
+    var advStr=advBits.join('; ');
     var etaRole=(typeof w.PW_timeRole==='function')?w.PW_timeRole(icao):'ETA';   // ETD for the departure field, ETA otherwise
     var winLabel=HAVE_ETA?('at your '+etaRole+' ~'+zhm(arrMs)):'active now';
 
@@ -312,8 +345,9 @@
       +'<div id="pwd-map" style="flex:1;background:#f4f6f8;position:relative"></div>'
       +'<div id="pwd-foot" style="padding:5px 12px;border-top:1px solid #e5e9ee;font:11.5px sans-serif;color:#33414f">'
       +'<b style="color:#1b2733">Closed '+winLabel+':</b> &nbsp;'
-      +(rk.length?'<b>RWY:</b> <span style="color:#c01722;font-weight:700">'+rwStr+'</span> &nbsp;·&nbsp; ':'')
-      +'<b>TWY:</b> <span style="color:#c01722;font-weight:700">'+(cl.length?cl.join(', '):'none')+'</span> '
+      +(rkHard.length?'<b>RWY:</b> <span style="color:#c01722;font-weight:700">'+rwStr+'</span> &nbsp;·&nbsp; ':'')
+      +'<b>TWY:</b> <span style="color:#c01722;font-weight:700">'+(clHard.length?clHard.join(', '):'none')+'</span> '
+      +(advStr?'<br><b style="color:#b06a00">⚠ Advisory (restrictions):</b> <span style="color:#b06a00;font-weight:600">'+esc(advStr)+'</span> ':'')
       +(otherStr?'<br><b style="color:#8a6d1b">Other times (not at your '+etaRole+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(otherStr)+'</span> ':'')
       +(schedStr?'<br><b style="color:#8a6d1b">Scheduled (not active '+DOW[NOWDOW]+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(schedStr)+'</span> ':'')
       +'<span style="color:#8a97a5">· closures shown for your planned '+(etaRole==='ETD'?'departure':'arrival')+' window; other-time &amp; recurring closures listed separately; crossing/taxi exceptions dashed; verify against the official diagram &amp; NOTAMs</span></div>';
@@ -382,8 +416,9 @@
       var d=document.createElement('div'); d.id='pwd-clos';
       d.style.cssText='position:absolute;left:10px;top:10px;z-index:1200;max-width:min(360px,86%);background:rgba(255,255,255,.96);border:1px solid #e0b6b6;border-left:5px solid '+RED+';border-radius:9px;padding:7px 10px;font:600 12.5px/1.4 sans-serif;color:#26313c;box-shadow:0 2px 12px rgba(0,0,0,.2)';
       var h='<div style="font-weight:800;font-size:13px;margin-bottom:3px">NOTAM closures — '+esc(winLabel)+'</div>';
-      if(rk.length) h+='<div><span style="color:'+RED+';font-weight:800">RWY:</span> '+esc(rwStr)+'</div>';
-      h+='<div><span style="color:'+RED+';font-weight:800">TWY:</span> '+(cl.length?esc(cl.join(', ')):'<span style="color:#2f7a45">none</span>')+'</div>';
+      if(rkHard.length) h+='<div><span style="color:'+RED+';font-weight:800">RWY:</span> '+esc(rwStr)+'</div>';
+      h+='<div><span style="color:'+RED+';font-weight:800">TWY:</span> '+(clHard.length?esc(clHard.join(', ')):'<span style="color:#2f7a45">none</span>')+'</div>';
+      if(advStr) h+='<div style="color:'+AMBER+';margin-top:3px;font-size:13px"><b>⚠ Advisory:</b> '+esc(advStr)+'</div>';
       if(otherStr) h+='<div style="color:#8a6d1b;margin-top:3px;font-size:13px"><b>Other times:</b> '+esc(otherStr)+'</div>';
       if(schedStr) h+='<div style="color:#8a6d1b;margin-top:3px;font-size:13px"><b>Scheduled (not active '+DOW[NOWDOW]+'):</b> '+esc(schedStr)+'</div>';
       d.innerHTML=h; mapHost.appendChild(d);
@@ -480,7 +515,7 @@
       var legEl=document.createElement('div');
       legEl.style.cssText='position:absolute;left:10px;bottom:10px;z-index:1200;background:rgba(255,255,255,.95);border:1px solid #cdd6df;border-radius:9px;padding:9px 13px;font:600 14px/1.35 sans-serif;color:#26313c;box-shadow:0 2px 10px rgba(0,0,0,.22)';
       function legRow(color,dash,label){ return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="display:inline-block;width:26px;height:0;border-top:5px '+(dash?'dashed':'solid')+' '+color+'"></span><span>'+label+'</span></div>'; }
-      legEl.innerHTML='<div style="font-weight:800;font-size:14px;margin-bottom:5px">Closures</div>'+legRow(RED,false,'Closed (RWY / TWY)')+legRow(AMBER,false,'Closed portion / displaced')+legRow(RED,true,'Taxi / crossing only');
+      legEl.innerHTML='<div style="font-weight:800;font-size:14px;margin-bottom:5px">Closures</div>'+legRow(RED,false,'Closed (RWY / TWY)')+legRow(AMBER,false,'Closed portion / displaced / advisory')+legRow(RED,true,'Taxi / crossing only');
       mapHost.appendChild(legEl);
       function osmWarn(){
         if(mapHost.querySelector('#pwd-osmwarn')) return;
@@ -509,11 +544,13 @@
                   L.polyline(portion,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g);
                   if(rc.kind==='displaced'){ var thr=portion[portion.length-1]; L.circleMarker(thr,{radius:5,color:'#fff',weight:2,fillColor:AMBER,fillOpacity:1,interactive:false}).addTo(g); }
                 } else { L.polyline(rw.c,{color:AMBER,weight:9,opacity:.9,interactive:false}).addTo(g); }
-              } else if(rc.taxiExc || rc.xngExc){ L.polyline(rw.c,{color:RED,weight:6,opacity:.95,dashArray:'14 10',interactive:false}).addTo(g); }
+              } else if(rc.kind==='cond'){ L.polyline(rw.c,{color:AMBER,weight:7,opacity:.9,interactive:false}).addTo(g);
+                L.polyline(rw.c,{color:'#fff',weight:1.3,opacity:.85,dashArray:'2 9',interactive:false}).addTo(g); }   // aircraft restriction — advisory, not a hard closure
+              else if(rc.taxiExc || rc.xngExc){ L.polyline(rw.c,{color:RED,weight:6,opacity:.95,dashArray:'14 10',interactive:false}).addTo(g); }
               else { L.polyline(rw.c,{color:RED,weight:9,opacity:.96,interactive:false}).addTo(g);
                 L.polyline(rw.c,{color:'#fff',weight:1.6,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g); }
             }
-            if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 12px sans-serif',color:(rc?'#7a1016':'#0b1622'),sz:[52,16]})}).addTo(g);
+            if(rw.ref) L.marker(rw.c[0],{interactive:false,icon:lbl(rw.ref,{f:'800 12px sans-serif',color:(rc?(rc.kind==='cond'?'#8a5600':'#7a1016'):'#0b1622'),sz:[52,16]})}).addTo(g);
           });
         }
         fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).then(function(geo){
@@ -534,11 +571,12 @@
           });
           if(!haveNmsGeom) cl.forEach(function(id){
             var clauses=twClauses[id], drewSomething=false, whole=clauses.some(function(c){return !c.from||!c.to;});
+            var TW=twCond[id]?AMBER:RED;   // aircraft-restriction-only taxiway => amber advisory, else red closure
             var S=mergeWays(twWays(geo,id));
             if(!whole){ clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c);
-              if(seg){ L.polyline(seg,{color:RED,weight:6,opacity:.97,interactive:false}).addTo(g);
+              if(seg){ L.polyline(seg,{color:TW,weight:6,opacity:.97,interactive:false}).addTo(g);
                        L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } }); }
-            if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:RED,weight:5,opacity:.95,interactive:false}).addTo(g);
+            if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:TW,weight:5,opacity:.95,interactive:false}).addTo(g);
               L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
             if(!drewSomething) notLocated.push('TWY '+id); else osmPlaced=true;
           });
