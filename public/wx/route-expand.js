@@ -50,6 +50,7 @@
     var dep=airport(depId,DB); if(dep){ pushId(dep.id);} else { unresolved.push(depId); pushId(depId); }
     for(var i=1;i<last;i++){
       var tk=t[i], prev=t[i-1], next=t[i+1];
+      if(tk==='DCT'||tk==='DIRECT'){ continue; }   // "direct to next point" — a connector, not a fix; skip (not an error)
       var sidP = (i===1 && dep && DB.procedures[dep.id] && DB.procedures[dep.id].D && DB.procedures[dep.id].D[tk]) ? DB.procedures[dep.id].D[tk] : null;
       var destApt = airport(destId,DB);
       var starP = (i===last-1 && destApt && DB.procedures[destApt.id] && DB.procedures[destApt.id].E && DB.procedures[destApt.id].E[tk]) ? DB.procedures[destApt.id].E[tk] : null;
