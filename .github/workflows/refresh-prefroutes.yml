@@ -1,0 +1,70 @@
+name: Refresh NASR preferred routes
+
+# Regenerates netlify/functions/prefroutes-data.js from the current FAA NASR
+# PFR (Preferred Route / TEC) 28-day CSV. NASR data is public (no key).
+#
+#   - Scheduled runs auto-commit when the data changes (Netlify redeploys on push).
+#   - Manual runs (workflow_dispatch) default to artifact-only: they generate the
+#     file and upload it for review WITHOUT committing. Set "commit=true" to have
+#     a manual run commit as well.
+#
+# The generator fails (exit 2) if the parse yields fewer than 5,000 city-pairs,
+# so a schema change or bad download can never overwrite good data with garbage.
+
+on:
+  schedule:
+    - cron: '0 14 * * 4'
+    - cron: '0 14 * * 0'
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Commit the regenerated file (true) or artifact-only (false)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-prefroutes
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Regenerate prefroutes-data.js
+        run: python3 tools/gen_prefroutes.py
+
+      - name: Show diff summary
+        run: |
+          git status --porcelain netlify/functions/prefroutes-data.js
+          git diff --stat netlify/functions/prefroutes-data.js || true
+
+      - name: Upload regenerated file (review copy)
+        uses: actions/upload-artifact@v4
+        with:
+          name: prefroutes-data
+          path: netlify/functions/prefroutes-data.js
+          retention-days: 14
+
+      - name: Commit and push if changed
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.commit)
+        run: |
+          if git diff --quiet netlify/functions/prefroutes-data.js; then
+            echo "No change in preferred-routes data; nothing to commit."
+            exit 0
+          fi
+          git config user.name  "pw-nasr-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add netlify/functions/prefroutes-data.js
+          git commit -m "Refresh NASR preferred routes (automated)"
+          git push
