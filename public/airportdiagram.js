@@ -297,15 +297,18 @@
     var winLabel=HAVE_ETA?('at your '+etaRole+' ~'+zhm(arrMs)):'active now';
 
     var ov=document.createElement('div');
+    ov.className='pwd-overlay';
     ov.style.cssText='position:fixed;inset:0;background:rgba(11,22,34,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
     var panel=document.createElement('div');
+    panel.className='pwd-panel';
     panel.style.cssText='background:#fff;border-radius:12px;width:min(1440px,98vw);height:min(940px,96vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.4)';
     panel.innerHTML=
-      '<div style="padding:6px 12px;border-bottom:1px solid #e5e9ee;display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;font:600 13px sans-serif;color:#1b2733">'
+      '<div class="pwd-bar" style="padding:6px 12px;border-bottom:1px solid #e5e9ee;display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;font:600 13px sans-serif;color:#1b2733">'
       +'<span style="flex:1 1 auto;min-width:0">'+esc(icao)+' — Airport Diagram <span id="pwd-src" style="color:#8a97a5;font-weight:500">· loading…</span></span>'
-      +'<button id="pwd-toggle" style="display:none;font-size:12px;background:#eef2f5;border:1px solid #d3dbe3;border-radius:6px;padding:6px 11px;min-height:34px;cursor:pointer;color:#2f6fed;font-weight:600"></button>'
-      +'<a id="pwd-faa" href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="font-size:12px;color:#2f6fed;text-decoration:none;display:inline-flex;align-items:center;min-height:34px">FAA diagram ↗</a>'
-      +'<button id="pwd-x" style="border:0;background:#eef2f5;border-radius:6px;width:34px;height:34px;cursor:pointer;font-size:16px;color:#33414f">✕</button></div>'
+      +'<button id="pwd-toggle" class="pwd-noprint" style="display:none;font-size:12px;background:#eef2f5;border:1px solid #d3dbe3;border-radius:6px;padding:6px 11px;min-height:34px;cursor:pointer;color:#2f6fed;font-weight:600"></button>'
+      +'<button id="pwd-print" class="pwd-noprint" title="Print / Save as PDF" style="font-size:12px;background:#eef2f5;border:1px solid #d3dbe3;border-radius:6px;padding:6px 11px;min-height:34px;cursor:pointer;color:#2f6fed;font-weight:600">🖨 Print</button>'
+      +'<a id="pwd-faa" class="pwd-noprint" href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="font-size:12px;color:#2f6fed;text-decoration:none;display:inline-flex;align-items:center;min-height:34px">FAA diagram ↗</a>'
+      +'<button id="pwd-x" class="pwd-noprint" style="border:0;background:#eef2f5;border-radius:6px;width:34px;height:34px;cursor:pointer;font-size:16px;color:#33414f">✕</button></div>'
       +'<div id="pwd-map" style="flex:1;background:#f4f6f8;position:relative"></div>'
       +'<div id="pwd-foot" style="padding:5px 12px;border-top:1px solid #e5e9ee;font:11.5px sans-serif;color:#33414f">'
       +'<b style="color:#1b2733">Closed '+winLabel+':</b> &nbsp;'
@@ -315,7 +318,8 @@
       +(schedStr?'<br><b style="color:#8a6d1b">Scheduled (not active '+DOW[NOWDOW]+'):</b> <span style="color:#8a6d1b;font-weight:600">'+esc(schedStr)+'</span> ':'')
       +'<span style="color:#8a97a5">· closures shown for your planned '+(etaRole==='ETD'?'departure':'arrival')+' window; other-time &amp; recurring closures listed separately; crossing/taxi exceptions dashed; verify against the official diagram &amp; NOTAMs</span></div>';
     ov.appendChild(panel); document.body.appendChild(ov);
-    function close(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }
+    function close(){ try{ window.removeEventListener('beforeprint',prepPrint); window.removeEventListener('afterprint',onAfterPrint); }catch(e){}
+      if(ov.parentNode) ov.parentNode.removeChild(ov); }
     panel.querySelector('#pwd-x').onclick=close;
     ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
 
@@ -326,6 +330,48 @@
     function updateToggle(v){ if(!toggleBtn) return; if(!faaUrl){ toggleBtn.style.display='none'; return; } toggleBtn.style.display=''; toggleBtn.textContent=(v==='faa')?'🛰 Satellite + closures':'▤ FAA chart'; }
     if(toggleBtn) toggleBtn.onclick=function(){ if(curView==='faa') renderOsm(); else if(faaUrl) renderFaa(faaUrl); };
     if(!document.getElementById('pw-spin-style')){ var st=document.createElement('style'); st.id='pw-spin-style'; st.textContent='@keyframes pwspin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
+    // Print stylesheet: while body.pwd-printing, isolate the diagram panel to one page and drop app chrome/controls.
+    if(!document.getElementById('pwd-print-style')){ var ps=document.createElement('style'); ps.id='pwd-print-style';
+      ps.textContent='@media print{'
+        +'body.pwd-printing > *:not(.pwd-overlay){display:none!important}'
+        +'body.pwd-printing{background:#fff!important}'
+        +'.pwd-overlay{position:static!important;inset:auto!important;display:block!important;padding:0!important;background:#fff!important}'
+        +'.pwd-overlay .pwd-panel{box-shadow:none!important;border-radius:0!important;overflow:visible!important;margin:0 auto!important}'
+        +'.pwd-overlay #pwd-map{position:relative!important}'
+        +'.pwd-noprint{display:none!important}'
+        +'.pwd-overlay .leaflet-control-container,.pwd-overlay .leaflet-control-zoom{display:none!important}'
+        +'.pwd-overlay *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}'
+        +'@page{margin:8mm}'
+        +'}';
+      document.head.appendChild(ps); }
+    // ----- Print / Save-as-PDF -----------------------------------------------------------------
+    // Freezes the current view (FAA chart OR satellite + NOTAM closures) to its on-screen pixel size so Leaflet
+    // tiles stay valid on the printed page, and sets the document title so the browser's Save-as-PDF pre-fills a
+    // descriptive filename, e.g. "KDIJ Airport Sat Map With NOTAMS - 22-AUG-26 0952 LCL" (satellite) /
+    // "KDIJ Airport Diagram With NOTAMS - ..." (FAA chart). Timestamp is the user's LOCAL clock.
+    var MONP=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    function p2(x){ return ('0'+x).slice(-2); }
+    function stampLocal(){ var d=new Date(); return p2(d.getDate())+'-'+MONP[d.getMonth()]+'-'+String(d.getFullYear()).slice(-2)+' '+p2(d.getHours())+p2(d.getMinutes())+' LCL'; }
+    function printName(){ var kind=(curView==='faa')?'Airport Diagram':'Airport Sat Map'; return icao+' '+kind+' With NOTAMS - '+stampLocal(); }
+    var _printing=false, _prevTitle=null, _frozen=null;
+    // Freeze the panel to fixed on-screen pixels (its inline sizing uses vw/vh, which would resolve to the PAPER
+    // size under print media and reflow/clip the Leaflet tiles), then shrink to fit one page via `zoom` (a render
+    // scale, so the map's pixel dimensions — and thus its already-loaded tiles — are untouched).
+    function prepPrint(){ if(_printing) return; _printing=true;
+      var pw=panel.offsetWidth, ph=panel.offsetHeight;
+      _frozen={ w:panel.style.width, h:panel.style.height, z:panel.style.zoom, mh:mapHost.style.height };
+      mapHost.style.height=mapHost.offsetHeight+'px';
+      panel.style.width=pw+'px'; panel.style.height=ph+'px';
+      panel.style.zoom=Math.min(1, 740/pw);                 // ~printable width of Letter/A4 portrait at 8mm margins
+      document.body.classList.add('pwd-printing'); }
+    function unprepPrint(){ if(!_printing) return; _printing=false; document.body.classList.remove('pwd-printing');
+      if(_frozen){ panel.style.width=_frozen.w; panel.style.height=_frozen.h; panel.style.zoom=_frozen.z; mapHost.style.height=_frozen.mh; _frozen=null; }
+      try{ if(curMap) curMap.invalidateSize(); }catch(e){} }
+    function onAfterPrint(){ unprepPrint(); if(_prevTitle!=null){ document.title=_prevTitle; _prevTitle=null; } }
+    function doPrint(){ _prevTitle=document.title; document.title=printName(); prepPrint(); setTimeout(function(){ try{ window.print(); }catch(e){} }, 40); }
+    window.addEventListener('beforeprint', prepPrint);
+    window.addEventListener('afterprint', onAfterPrint);
+    var printBtn=panel.querySelector('#pwd-print'); if(printBtn) printBtn.onclick=doPrint;
     function cleanup(){ if(curMap){ try{ curMap.remove(); }catch(e){} curMap=null; } try{ if(mapHost._leaflet_id) delete mapHost._leaflet_id; }catch(e){} mapHost.innerHTML=''; }
     function showLoading(msg){ mapHost.innerHTML='<div id="pwd-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:#5a6773;font:13px sans-serif;background:#f4f6f8;z-index:5"><span style="width:15px;height:15px;border:2px solid #c9d2db;border-top-color:#2f6fed;border-radius:50%;display:inline-block;animation:pwspin .8s linear infinite"></span> '+msg+'</div>'; }
     function stopLoading(){ var e=document.getElementById('pwd-loading'); if(e&&e.parentNode) e.parentNode.removeChild(e); }

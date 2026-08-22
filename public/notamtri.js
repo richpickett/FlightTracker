@@ -157,8 +157,13 @@
   // ---- live filter state ----
   w.PWNotam = w.PWNotam || {};
   var FILTER = { cats: Object.assign({}, DEFAULT_ON), src: { local:true, regional:false } };
+  // Field-surface categories are always about the airport you selected (its runways/taxiways/field), so they
+  // must never be hidden behind the Local/Regional source toggle — only broader-area NOTAMs (airspace, obstacle,
+  // TFR, GPS, procedures, other) respect Local/Regional.
+  var FIELD_CATS = { Airport:1, Runway:1, Taxiway:1 };
   function visible(it){
     if(!FILTER.cats[it._cat]) return false;
+    if(FIELD_CATS[it._cat]) return true;
     if(!((FILTER.src.local && it._local) || (FILTER.src.regional && !it._local))) return false;
     return true;
   }
