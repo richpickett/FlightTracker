@@ -14,20 +14,27 @@
     s=(s||'').toUpperCase().trim();
     var m=s.match(/RWY\s+([0-9]{1,2}[LRC]?(?:\/[0-9]{1,2}[LRC]?)?)/);
     if(m) return {type:'rwy',id:m[1]};
-    m=s.match(/TWY\s+([A-Z]\d?)/);
+    m=s.match(/TWY\s+([A-Z]{1,2}\d{0,2})/);   // one/two letters + up to two digits (WJ, A12, Y11)
     if(m) return {type:'twy',id:m[1]};
     return null;
   }
   // Aircraft-conditional restriction, e.g. "CLSD TO ACFT WINGSPAN MORE THAN 214FT" / weight limits. These are NOT
   // hard closures — they only bar oversized/heavy aircraft — so we surface them as an AMBER advisory, not a red
   // closure. Given a short tail of text after the CLSD, say whether it's such a restriction + a compact phrase.
+  // Covers: wingspan/weight (oversized only), taxi-speed (slow-taxi allowed), and DIRECTIONAL runway limits —
+  // "CLSD TO LDG" (no landing, departures OK) / "CLSD TO TKOF" (no takeoff). "CLSD TO TKOF AND LDG" is BOTH, i.e.
+  // a genuine full closure, so it is NOT a restriction (returns false -> drawn red).
   function condIsRestrict(s){ s=(s||'').toUpperCase();
-    return /\bTO\s+ACFT\b|\bWINGSPAN\b|\bMORE\s+THAN\s+\d+\s*FT\b|\bOVER\s+\d+\s*(?:LB|LBS|KG)\b|\bGROSS\s+WEIGHT\b/.test(s); }
+    if(/\bTO\s+(?:TKOF\s+AND\s+LDG|LDG\s+AND\s+TKOF)\b/.test(s)) return false;   // closed to both = full closure
+    return /\bTO\s+ACFT\b|\bWINGSPAN\b|\bMORE\s+THAN\s+\d+\s*FT\b|\bOVER\s+\d+\s*(?:LB|LBS|KG)\b|\bGROSS\s+WEIGHT\b|\b(?:LESS|MORE)\s+THAN\s+\d+\s*KNOTS?\b|\bTAXI\s+SPEED\b|\bTO\s+LDG\b|\bTO\s+TKOF\b/.test(s); }
   function condPhrase(s){ s=(s||'').toUpperCase(); var m;
     if(m=s.match(/WINGSPAN\s+MORE\s+THAN\s+(\d+)\s*FT/)) return 'wingspan >'+m[1]+'ft';
     if(m=s.match(/MORE\s+THAN\s+(\d+)\s*FT\b[^.]{0,10}WINGSPAN/)) return 'wingspan >'+m[1]+'ft';
     if(m=s.match(/OVER\s+(\d+)\s*(LB|LBS|KG)/)) return '>'+m[1]+' '+m[2].toLowerCase();
     if(/GROSS\s+WEIGHT/.test(s)) return 'weight limit';
+    if(/\bTO\s+LDG\b/.test(s) && !/\bTKOF\b/.test(s)) return 'no landing';
+    if(/\bTO\s+TKOF\b/.test(s) && !/\bLDG\b/.test(s)) return 'no takeoff';
+    if(/KNOTS?|TAXI\s+SPEED/.test(s)) return 'slow taxi only';
     if(/TO\s+ACFT/.test(s)) return 'acft restriction';
     return 'restriction'; }
 
@@ -40,7 +47,7 @@
     var out=[], m;
     // Pass 1 — segment clauses "TWY <id> BTN <ref1> AND <ref2>". Blank them out afterwards.
     var refPat='((?:APCH\\s+END\\s+)?(?:RWY|TWY|GATE)\\s+[A-Z0-9\\/]+)';
-    var segRe=new RegExp('\\bTWY\\s+([A-Z]\\d?)\\s+BTN\\s+'+refPat+'\\s+AND\\s+'+refPat,'g');
+    var segRe=new RegExp('\\bTWY\\s+([A-Z]{1,2}\\d{0,2})\\s+BTN\\s+'+refPat+'\\s+AND\\s+'+refPat,'g');
     var blanked=t;
     while(m=segRe.exec(t)){
       var tailS=t.slice(m.index, m.index+m[0].length+48), cS=condIsRestrict(tailS);
@@ -48,12 +55,13 @@
       blanked=blanked.slice(0,m.index)+' '.repeat(m[0].length)+blanked.slice(m.index+m[0].length);
     }
     // Pass 2 — remaining bare "TWY <id>[, id, id]" are whole-taxiway closures.
-    var cleaned=blanked.replace(/\bBTN\b[^,;.]{0,40}\bAND\b\s*(?:RWY|TWY|APCH|APPROACH|GATE)[^,;.]{0,18}/g,' ')
+    var cleaned=blanked.replace(/\bEXC(?:EPT)?\b[^.;]*?\bTAXI\s+ON\s+(?:RWY|TWY)[^.;]*/g,' ')             // "CLSD EXC TAXI ON TWY F AND TWY H" = permitted route, NOT a closure
+      .replace(/\bBTN\b[^,;.]{0,40}\bAND\b\s*(?:RWY|TWY|APCH|APPROACH|GATE)[^,;.]{0,18}/g,' ')
       .replace(/\b(?:N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST)\s+OF\s+(?:RWY|TWY)\s+[A-Z0-9\/]+/g,' ')  // "<dir> OF TWY A7" = boundary landmark, not a closure
       .replace(/\bAT\s+(?:RWY|TWY)\s+[A-Z0-9\/]+/g,' ');                                                  // "AT TWY B" = location, not a closure
-    var wRe=/\bTWY\s+([A-Z]\d?)((?:\s*,\s*[A-Z]\d?(?![A-Z0-9])){0,12})/g;
+    var wRe=/\bTWY\s+([A-Z]{1,2}\d{0,2})((?:\s*,\s*[A-Z]{1,2}\d{0,2}(?![A-Z0-9])){0,12})/g;
     while(m=wRe.exec(cleaned)){
-      var ids=[m[1]]; if(m[2]){ (m[2].match(/[A-Z]\d?/g)||[]).forEach(function(x){ids.push(x);}); }
+      var ids=[m[1]]; if(m[2]){ (m[2].match(/[A-Z]{1,2}\d{0,2}/g)||[]).forEach(function(x){ids.push(x);}); }
       var tailW=cleaned.slice(m.index, m.index+m[0].length+48), cW=condIsRestrict(tailW), dW=cW?condPhrase(tailW):'';
       ids.forEach(function(id){ out.push({twy:id,from:null,to:null,cond:cW,detail:dW}); });
     }
@@ -206,6 +214,27 @@
   }
 
   function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  // ---- FAA plate graticule parsing (pure; used by the georeferencer) ----
+  // A tick label like "33°38'N" / "N33 38.5" -> {v:decimalDeg, geo:'lat'|'lon'}.
+  function parseTick(str){
+    var s=(str||'').toUpperCase().replace(/\s+/g,' ').trim();
+    if(!s || s.length>18) return null; var m;
+    if(m=s.match(/(\d{1,3})[°\-\s](\d{1,2}(?:\.\d+)?)['′\s]*([NSEW])\b/)){
+      var v=parseInt(m[1],10)+parseFloat(m[2])/60; if(m[3]==='S'||m[3]==='W') v=-v;
+      return {v:v, geo:(m[3]==='N'||m[3]==='S')?'lat':'lon'}; }
+    if(m=s.match(/\b([NSEW])\s*(\d{1,3})[°\-\s](\d{1,2}(?:\.\d+)?)/)){
+      var v2=parseInt(m[2],10)+parseFloat(m[3])/60; if(m[1]==='S'||m[1]==='W') v2=-v2;
+      return {v:v2, geo:(m[1]==='N'||m[1]==='S')?'lat':'lon'}; }
+    return null;
+  }
+  // Least-squares y = m*x + b with RMS residual.
+  function linfit(xs, ys){ var n=xs.length; if(n<2) return null;
+    var sx=0,sy=0,sxx=0,sxy=0,i; for(i=0;i<n;i++){ sx+=xs[i]; sy+=ys[i]; sxx+=xs[i]*xs[i]; sxy+=xs[i]*ys[i]; }
+    var den=n*sxx-sx*sx; if(Math.abs(den)<1e-9) return null;
+    var m=(n*sxy-sx*sy)/den, b=(sy-m*sx)/n, res=0;
+    for(i=0;i<n;i++){ var e=ys[i]-(m*xs[i]+b); res+=e*e; }
+    return {m:m, b:b, rms:Math.sqrt(res/n)}; }
 
   // ===== Modal ===============================================================
   function open(icao){
@@ -436,6 +465,84 @@
       mapHost.innerHTML='<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;color:#5a6773;font:13px sans-serif;padding:24px"><div>'+msg+'</div><a href="https://skyvector.com/airport/'+encodeURIComponent(icao)+'" target="_blank" rel="noopener" style="background:#2f6fed;color:#fff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600">Open official airport diagram ↗</a></div>';
       closuresPanel();
     }
+    // ===== FAA plate georeferencing =========================================================
+    // FAA airport diagrams carry a lat/lon tick graticule around the neatline. We read those tick LABELS from the
+    // PDF text layer, fit lat->pixelY and lon->pixelX, and project our closure geometry onto the plate. FAA does
+    // NOT publish plate georeferencing, so this is derived — and gated hard: if the ticks can't be read/fit with
+    // confidence, we draw NOTHING and fall back to "closures listed" (never a misplaced closure on a pilot's chart).
+    function georefPlate(page, vp, canvas){
+      return page.getTextContent().then(function(tc){
+        var lat=[], lon=[], Util=(w.pdfjsLib&&w.pdfjsLib.Util);
+        (tc.items||[]).forEach(function(it){ var g=parseTick(it.str); if(!g||!Util) return;
+          var tr=Util.transform(vp.transform, it.transform); (g.geo==='lat'?lat:lon).push({v:g.v, px:tr[4], py:tr[5]}); });
+        function ndist(a){ var s={}; a.forEach(function(o){ s[o.v.toFixed(4)]=1; }); return Object.keys(s).length; }
+        if(ndist(lat)<2 || ndist(lon)<2) return null;
+        var fy=linfit(lat.map(function(o){return o.v;}), lat.map(function(o){return o.py;}));   // py = fy.m*lat + fy.b
+        var fx=linfit(lon.map(function(o){return o.v;}), lon.map(function(o){return o.px;}));   // px = fx.m*lon + fx.b
+        if(!fy||!fx||!isFinite(fy.m)||!isFinite(fx.m)||fy.m===0||fx.m===0) return null;
+        var W=canvas.width, H=canvas.height;
+        if(fy.rms>H*0.04 || fx.rms>W*0.04) return null;                       // poor fit (only bites with ≥3 ticks)
+        var toXY=function(la,lo){ return {px:fx.m*lo+fx.b, py:fy.m*la+fy.b}; };
+        var c=toXY(data.lat, data.lon);                                       // airport ref must land inside the plate
+        if(c.px<-W*0.12||c.px>W*1.12||c.py<-H*0.12||c.py>H*1.12) return null;
+        return { toXY:toXY, H:H, W:W };
+      }).catch(function(){ return null; });
+    }
+    function haveNmsGeomNow(){ return (data.items||[]).some(function(n){ return !isCancel(n)&&inWindow(n)&&(n.closed||n.conditional)&&geomHasPolygon(n.geometry); }); }
+    // Draw the same closures onto the georeferenced plate (projected). Returns count drawn, or -1 if the georef
+    // fails a scale sanity check (a real runway must project to a plausible pixel length) so the caller can bail.
+    function drawClosuresOnPlate(g, gref, rwj, geo){
+      var H=gref.H, drew=0;
+      function P(pt){ var c=gref.toXY(pt[0],pt[1]); return [H-c.py, c.px]; }
+      function PL(a){ return a.map(P); }
+      function pxLen(a,b){ var dx=a[1]-b[1], dy=a[0]-b[0]; return Math.sqrt(dx*dx+dy*dy); }
+      function matchRc(ref){ if(closedR[ref]) return closedR[ref]; var cand=null;
+        for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })){ if(closedR[k].kind!=='cond') return closedR[k]; if(!cand) cand=closedR[k]; } } return cand; }
+      var faaRw=(((rwj&&rwj.runways)||[]).map(function(r){ var e=r.ends||[]; if(e.length<2||!e[0]||!e[1]||e[0].lat==null||e[1].lat==null)return null;
+        return { ref:r.ref||r.id, c:[[e[0].lat,e[0].lon],[e[1].lat,e[1].lon]] }; }).filter(Boolean));
+      // scale sanity: the longest runway must project to a believable length on the plate
+      if(faaRw.length){ var lp=0; faaRw.forEach(function(rw){ lp=Math.max(lp, pxLen(P(rw.c[0]),P(rw.c[1]))); });
+        var diag=Math.sqrt(gref.W*gref.W+H*H); if(lp<60 || lp>diag*1.2) return -1; }
+      faaRw.forEach(function(rw){ var rc=matchRc(normRwy(rw.ref)); if(!rc) return;
+        if(rc.kind==='partial'||rc.kind==='displaced'){ var portion=closedPortion(rw.c,rc);
+          if(portion){ L.polyline(PL(portion),{color:AMBER,weight:8,opacity:.95,interactive:false}).addTo(g);
+            L.polyline(PL(portion),{color:'#fff',weight:1.4,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g); drew++; }
+          else { L.polyline(PL(rw.c),{color:AMBER,weight:8,opacity:.9,interactive:false}).addTo(g); drew++; } }
+        else if(rc.kind==='cond'){ L.polyline(PL(rw.c),{color:AMBER,weight:7,opacity:.9,interactive:false}).addTo(g);
+          L.polyline(PL(rw.c),{color:'#fff',weight:1.2,opacity:.85,dashArray:'2 9',interactive:false}).addTo(g); drew++; }
+        else if(rc.taxiExc||rc.xngExc){ L.polyline(PL(rw.c),{color:RED,weight:6,opacity:.95,dashArray:'14 10',interactive:false}).addTo(g); drew++; }
+        else { L.polyline(PL(rw.c),{color:RED,weight:8,opacity:.96,interactive:false}).addTo(g);
+          L.polyline(PL(rw.c),{color:'#fff',weight:1.4,opacity:.9,dashArray:'3 7',interactive:false}).addTo(g); drew++; }
+      });
+      (data.items||[]).forEach(function(n){ if(isCancel(n)||!inWindow(n)) return;
+        if(!(n.closed||n.conditional)||!n.geometry) return; if(closedRwys(n.text||'').length) return;
+        var col=n.conditional?AMBER:RED, geoms=n.geometry.geometries||[n.geometry];
+        geoms.forEach(function(gm){ if(!gm||!gm.coordinates) return;
+          var polys=gm.type==='Polygon'?[gm.coordinates]:(gm.type==='MultiPolygon'?gm.coordinates:null); if(!polys) return;
+          polys.forEach(function(rings){ rings.forEach(function(ring){ var ll=ring.map(function(c){ return P([c[1],c[0]]); }); if(ll.length<3) return;
+            L.polygon(ll,{color:col,weight:1.5,opacity:.95,fillColor:col,fillOpacity:.3,interactive:false}).addTo(g); drew++; }); }); });
+      });
+      if(geo && !geo.error && (geo.taxiways||[]).length && !haveNmsGeomNow()){
+        cl.forEach(function(id){ var clauses=twClauses[id], whole=clauses.some(function(c){return !c.from||!c.to;}), TW=twCond[id]?AMBER:RED, did=false;
+          if(!whole){ clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c); if(seg){ L.polyline(PL(seg),{color:TW,weight:6,opacity:.97,interactive:false}).addTo(g);
+            L.polyline(PL(seg),{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); did=true; drew++; } }); }
+          if(!did){ var S=mergeWays(twWays(geo,id)); if(S.length>1){ L.polyline(PL(S),{color:TW,weight:5,opacity:.95,interactive:false}).addTo(g);
+            L.polyline(PL(S),{color:'#fff',weight:1.3,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drew++; } }
+        });
+      }
+      return drew;
+    }
+    function plateLegend(){ if(document.getElementById('pwd-leg')) return;
+      var legEl=document.createElement('div'); legEl.id='pwd-leg';
+      legEl.style.cssText='position:absolute;left:10px;bottom:10px;z-index:1200;background:rgba(255,255,255,.95);border:1px solid #cdd6df;border-radius:9px;padding:9px 13px;font:600 14px/1.35 sans-serif;color:#26313c;box-shadow:0 2px 10px rgba(0,0,0,.22)';
+      function row(color,dash,label){ return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="display:inline-block;width:26px;height:0;border-top:5px '+(dash?'dashed':'solid')+' '+color+'"></span><span>'+label+'</span></div>'; }
+      legEl.innerHTML='<div style="font-weight:800;font-size:14px;margin-bottom:5px">Closures</div>'+row(RED,false,'Closed (RWY / TWY)')+row(AMBER,false,'Closed portion / displaced / advisory')+row(RED,true,'Taxi / crossing only');
+      mapHost.appendChild(legEl); }
+    function plateNote(msg){ if(document.getElementById('pwd-pnote')) return;
+      var d=document.createElement('div'); d.id='pwd-pnote';
+      d.style.cssText='position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:1200;max-width:min(560px,92%);background:#eef3f8;border:1px solid #cdd6df;color:#4a5866;border-radius:8px;padding:6px 11px;font:600 11.5px/1.3 sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.15);text-align:center';
+      d.textContent=msg; mapHost.appendChild(d); }
+
     // ----- Preferred: official FAA diagram, rendered clean via PDF.js (no browser PDF chrome) -----
     function loadPdfJs(cb){
       if(w.pdfjsLib) return cb(w.pdfjsLib);
@@ -455,9 +562,10 @@
             var v1=page.getViewport({scale:1}), scale=Math.min(3.2,Math.max(1.6,2400/Math.max(v1.width,v1.height)));
             var vp=page.getViewport({scale:scale}), canvas=document.createElement('canvas');
             canvas.width=Math.round(vp.width); canvas.height=Math.round(vp.height);
-            return page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise.then(function(){ return canvas; });
+            return page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise.then(function(){ return {page:page,vp:vp,canvas:canvas}; });
           })
-          .then(function(canvas){
+          .then(function(o){
+            var canvas=o.canvas;
             cleanup();
             var m2=L.map(mapHost,{crs:L.CRS.Simple,zoomControl:false,attributionControl:false,minZoom:-5,maxZoom:4,zoomSnap:.25}); curMap=m2;
             L.control.zoom({position:'topright'}).addTo(m2);
@@ -465,6 +573,20 @@
             L.imageOverlay(canvas.toDataURL('image/png'),bounds).addTo(m2);
             m2.fitBounds(bounds); setTimeout(function(){ try{ m2.invalidateSize(); m2.fitBounds(bounds); }catch(e){} },60);
             setSrc('· FAA chart · closures listed'); closuresPanel();
+            // Try to draw the closures ON the plate. Georef is derived + gated; on any doubt we keep "listed only".
+            georefPlate(o.page, o.vp, canvas).then(function(gref){
+              if(!gref){ plateNote('Plate not georeferenced — closures listed above; use 🛰 Satellite for drawn closures.'); return; }
+              var pg=L.layerGroup().addTo(m2);
+              Promise.all([
+                fetch('/.netlify/functions/runways?icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).catch(function(){return {};}),
+                fetch('/.netlify/functions/airportgeo?lat='+data.lat+'&lon='+data.lon+'&icao='+encodeURIComponent(icao)+CB).then(function(r){return r.json();}).catch(function(){return {};})
+              ]).then(function(res){
+                var n=drawClosuresOnPlate(pg, gref, res[0], res[1]);
+                if(n<0){ try{ pg.clearLayers(); }catch(e){} plateNote('Plate georeference failed a sanity check — closures listed above; use 🛰 Satellite for drawn closures.'); return; }
+                if(n>0){ plateLegend(); setSrc('· FAA chart · closures drawn'); plateNote('Closures positioned from the plate graticule — approximate; verify against the official diagram.'); }
+                else { plateNote('No drawable closure geometry — closures listed above.'); }
+              }).catch(function(){ plateNote('Plate not georeferenced — closures listed above; use 🛰 Satellite for drawn closures.'); });
+            }).catch(function(){ /* leave as listed */ });
           })
           .catch(function(){ renderOsm(); });
       });
@@ -531,7 +653,10 @@
           return { ref:r.ref||r.id, c:[[e[0].lat,e[0].lon],[e[1].lat,e[1].lon]], ends:e, faa:true }; }).filter(Boolean));
         var bounds=[], notLocated=[], osmPlaced=false;
         var haveNmsGeom=(data.items||[]).some(function(n){ return !isCancel(n) && inWindow(n) && (n.closed||n.conditional) && geomHasPolygon(n.geometry); });
-        function matchRc(ref){ return closedR[ref] || (function(){ for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })) return closedR[k]; } return null; })(); }
+        function matchRc(ref){ if(closedR[ref]) return closedR[ref];
+          var cand=null;   // a runway may have different states per end (e.g. 22 fully closed, 04 no-landing) — prefer the hard closure so the surface reads red
+          for(var k in closedR){ if(k.split('/').some(function(e){ return ref.split('/').indexOf(e)>=0; })){ if(closedR[k].kind!=='cond') return closedR[k]; if(!cand) cand=closedR[k]; } }
+          return cand; }
         function paintRunways(rwList){
           rwList.forEach(function(rw){ if(!rw.c||rw.c.length<2)return; bounds=bounds.concat(rw.c);
             var ref=normRwy(rw.ref), rc=matchRc(ref);
@@ -607,5 +732,5 @@
   }
   w.PWDiagram = { open: open, _closedTwySegs: closedTwySegs, _closedTwyIds: closedTwyIds, _closedRwys: closedRwys,
                   _taxiwaySegment: taxiwaySegment, _closedPortion: closedPortion, _mergeWays: mergeWays, _polyLenFt: polyLenFt, _rwWays: rwWays, _twWays: twWays,
-                  _notamSched: notamSched, _schedActive: schedActive };
+                  _notamSched: notamSched, _schedActive: schedActive, _parseTick: parseTick, _linfit: linfit };
 })(window);
