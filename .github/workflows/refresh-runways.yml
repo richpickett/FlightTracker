@@ -1,0 +1,44 @@
+name: Refresh runway data (FAA NASR)
+
+# Regenerates netlify/functions/runways-data.js from the current FAA NASR 28-day
+# APT subscription (runway thresholds / headings / elevations) and commits any
+# changes. Netlify auto-deploys on the push. gen_runways.py downloads the NASR
+# APT CSV itself (stdlib only) and has a sanity gate that aborts without writing
+# if the download is short — so a bad fetch fails the job instead of shipping junk.
+# Runs twice weekly (only commits when the data actually changes) + manual button.
+
+on:
+  schedule:
+    - cron: '15 10 * * 1,4'   # Mon & Thu 10:15 UTC — catches each 28-day cycle within days
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: runways-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build runway data from current NASR APT
+        run: python3 tools/gen_runways.py
+      - name: Commit & push if changed
+        run: |
+          FILE="netlify/functions/runways-data.js"
+          if [ -n "$(git status --porcelain "$FILE")" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "$FILE"
+            git commit -m "Auto: refresh FAA NASR runway data ($(date -u +%Y-%m-%d))"
+            git push
+            echo "Runway data updated and pushed."
+          else
+            echo "No runway-data changes this cycle."
+          fi
