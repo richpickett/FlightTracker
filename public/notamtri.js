@@ -167,7 +167,11 @@
   // ---- filter chip bar (ForeFlight-style) ----
   function renderBar(barEl, agg, onToggle){
     if(!barEl) return;
-    var h='<div class="nf-sec">Category</div><div class="nf-row">';
+    var allsty='font:600 10.5px system-ui;border:1px solid #c6d0de;background:#f4f8ff;color:#0b3d91;border-radius:6px;padding:2px 8px;cursor:pointer;margin-left:6px;vertical-align:1px';
+    var h='<div class="nf-sec">Category'
+        +'<button type="button" class="nf-all" data-all="1" style="'+allsty+'">Select all</button>'
+        +'<button type="button" class="nf-all" data-all="0" style="'+allsty+'">Clear</button>'
+        +'</div><div class="nf-row">';
     CATS.forEach(function(c){
       var n=(agg.cat&&agg.cat[c])||0, on=!!FILTER.cats[c];
       h+='<button type="button" class="nf-chip'+(on?' on':'')+'" data-k="cat" data-v="'+c+'">'+c+' <b>'+n+'</b></button>';
@@ -182,6 +186,10 @@
       b.onclick=function(){ var k=b.getAttribute('data-k'), v=b.getAttribute('data-v');
         if(k==='cat') FILTER.cats[v]=!FILTER.cats[v]; else FILTER.src[v]=!FILTER.src[v];
         if(onToggle) onToggle(); };
+    });
+    // Select all / Clear: flip every category on/off, then refresh the list (same onToggle).
+    barEl.querySelectorAll('.nf-all').forEach(function(b){
+      b.onclick=function(){ var on=b.getAttribute('data-all')==='1'; CATS.forEach(function(c){ FILTER.cats[c]=on?1:0; }); if(onToggle) onToggle(); };
     });
   }
 
