@@ -73,7 +73,7 @@
     <textarea id="rin" rows="1" placeholder="Route:  KSAN BRDR7 JLI KPSP" autocomplete="off" spellcheck="false" title="Flight-planned route — airports, VORs, fixes, airways, SIDs/STARs (space-separated)" style="flex-basis:100%"></textarea>
     <span class="ac">Dep<input id="dep" type="text" placeholder="HHMM" title="Departure time HHMM (local or UTC per the selector)"><select id="deptz" title="Departure time zone"><option value="L">Lcl</option><option value="Z">UTC</option></select>
       Cruise Ft<input id="cruise" type="number" value="10000" title="Planned cruise altitude, feet MSL"> TAS<input id="tas" type="number" value="145" title="True airspeed at cruise, knots"> Usable<input id="usable" type="number" value="87" title="Usable fuel on board, in the selected units"><select id="funit" title="Fuel quantity units"><option value="gal">gal</option><option value="lbs">lbs</option></select> Flow<input id="gph" type="number" value="18" title="Fuel burn per hour — match the Usable units"><select id="flowunit" title="Fuel flow units"><option value="gph">gph</option><option value="pph">pph</option></select> Reserve<input id="rsv" type="number" value="45" title="Reserve fuel you want on board, in the selected units"></span>
-    <span class="ac" style="flex-basis:100%">Max Alt<input id="amax" type="number" placeholder="none" title="Highest usable cruise altitude (service ceiling). The wind optimizer will not recommend above this. Blank = no cap. e.g. C206 ≈ 15000, turbine ≈ 45000."> Min Alt<input id="amin" type="number" placeholder="none" title="Lowest cruise altitude the optimizer may recommend (blank = no floor); use for terrain/MEA."><button id="rtsave" type="button" class="sec" style="margin-left:10px" title="Save the current route (and aircraft) to your account">💾 Save Route</button><button id="rtlist" type="button" class="sec" title="Browse and load your saved routes">📁 Saved Routes</button><button id="prefrt" type="button" class="sec" title="FAA preferred routes published for this departure→arrival pair (if any)">✈ FAA Routes</button></span>
+    <span class="ac" style="flex-basis:100%">Max Alt<input id="amax" type="number" placeholder="none" title="Highest usable cruise altitude (service ceiling). The wind optimizer will not recommend above this. Blank = no cap. e.g. C206 ≈ 15000, turbine ≈ 45000."> Min Alt<input id="amin" type="number" placeholder="none" title="Lowest cruise altitude the optimizer may recommend (blank = no floor); use for terrain/MEA."><button id="rtsave" type="button" class="sec" style="margin-left:10px" title="Save the current route (and aircraft) to your account">💾 Save Route</button><button id="rtlist" type="button" class="sec" title="Browse and load your saved routes">📁 Saved Routes</button><button id="prefrt" type="button" class="sec" title="FAA preferred routes published for this departure→arrival pair (if any)">✈ FAA Routes</button><button id="filedrt" type="button" class="sec" title="Retrieve a previously filed route from FlightAware by tail number and date">📋 Filed Routes</button></span>
     <button id="go">Update</button><button id="print" class="sec">Print</button><button id="tomap" class="sec" title="Open this route on the live enroute map">🗺 Live map</button><a id="pw-acct-slot" style="cursor:pointer">👤 Sign in</a>
   </div>
   <div id="acerr" class="acerr noprint" style="display:none"></div>
@@ -211,6 +211,59 @@ function openPrefRoutes(){
     }).join('')+'<div style="font-size:11.5px;color:#8a97a5;margin-top:2px">Source: FAA NASR Preferred Routes. Verify against your clearance &amp; current NOTAMs.</div>';
     Array.prototype.forEach.call(body.querySelectorAll('.pr-row'),function(el){ el.onclick=function(){ var rt=routes[+el.getAttribute('data-i')]; var full=depTok+' '+rt.r+' '+arrTok; rin.value=full; try{setRoute(full);}catch(e){} close(); render(full); }; });
   }).catch(function(){ body.innerHTML='<div style="padding:22px;text-align:center;color:#c01722">Could not load preferred routes.</div>'; });
+}
+// Filed Routes popup — pull a previously filed route from FlightAware (AeroAPI) by tail + date; selecting one
+// populates the route box with departure + filed route + destination.
+function openFiledRoutes(){
+  var rin=document.getElementById('rin');
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  var reg0=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  var date0=(document.getElementById('depdate')||{}).value||new Date().toISOString().slice(0,10);
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(11,22,34,.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+  var box=document.createElement('div');
+  box.style.cssText='background:#fff;border-radius:12px;width:min(620px,96vw);max-height:86vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.4);font:14px/1.45 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1b2733;overflow:hidden';
+  box.innerHTML='<div style="padding:13px 16px;border-bottom:1px solid #e5e9ee;display:flex;align-items:center;font-weight:800;font-size:16px">📋 Filed Routes <span style="color:#8a97a5;font-weight:600;font-size:13px;margin-left:8px">FlightAware</span><button id="fr-x" style="margin-left:auto;border:0;background:#eef2f5;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:16px;color:#33414f">✕</button></div>'
+    +'<div style="padding:12px 16px;border-bottom:1px solid #eef2f5;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'
+    +'<label style="display:flex;flex-direction:column;font-size:11.5px;font-weight:700;color:#5a6773;gap:3px">Tail #<input id="fr-tail" value="'+esc(reg0)+'" placeholder="N13709" style="width:120px;padding:7px 9px;border:1px solid #cdd6df;border-radius:6px;font-size:15px;text-transform:uppercase;color:#1b2733"></label>'
+    +'<label style="display:flex;flex-direction:column;font-size:11.5px;font-weight:700;color:#5a6773;gap:3px">Date (UTC)<input id="fr-date" type="date" value="'+esc(date0)+'" style="padding:7px 9px;border:1px solid #cdd6df;border-radius:6px;font-size:15px;color:#1b2733"></label>'
+    +'<button id="fr-get" type="button" style="background:#0b3d91;color:#fff;border:0;border-radius:7px;padding:9px 15px;font-weight:700;font-size:14px;cursor:pointer;min-height:38px">Get routes</button></div>'
+    +'<div id="fr-body" style="padding:14px 16px;overflow:auto">Enter a tail number and date, then <b>Get routes</b>.</div>';
+  ov.appendChild(box); document.body.appendChild(ov);
+  function close(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }
+  box.querySelector('#fr-x').onclick=close; ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
+  var body=box.querySelector('#fr-body');
+  function zhm(s){ if(!s) return ''; var d=new Date(s); if(isNaN(d)) return ''; return ('0'+d.getUTCHours()).slice(-2)+('0'+d.getUTCMinutes()).slice(-2)+'Z'; }
+  // Compose departure + filed route + destination, de-duplicating an origin/destination the filed route already carries.
+  function compose(f){
+    var toks=(f.route||'').split(/\s+/).filter(Boolean);
+    if(toks.length && f.origin && toks[0]===f.origin) toks.shift();
+    if(toks.length && f.destination && toks[toks.length-1]===f.destination) toks.pop();
+    return [f.origin, toks.join(' '), f.destination].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+  }
+  function run(){
+    var tail=(box.querySelector('#fr-tail').value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    var date=(box.querySelector('#fr-date').value||'').trim();
+    if(!tail){ body.innerHTML='<div style="padding:18px;text-align:center;color:#c01722">Enter a tail number.</div>'; return; }
+    body.innerHTML='<div style="padding:20px;text-align:center;color:#5a6773">Searching FlightAware…</div>';
+    fetch('/.netlify/functions/filedroute?ident='+encodeURIComponent(tail)+'&date='+encodeURIComponent(date)).then(function(r){return r.json();}).then(function(d){
+      if(d && d.error==='not configured'){ body.innerHTML='<div style="padding:20px;text-align:center;color:#5a6773">FlightAware isn’t connected yet.<br><span style="font-size:12px">Add the <code>AEROAPI_KEY</code> environment variable in Netlify.</span></div>'; return; }
+      if(d && d.error){ body.innerHTML='<div style="padding:20px;text-align:center;color:#c01722">FlightAware error: '+esc(d.error)+'</div>'; return; }
+      var fl=(d&&d.flights)||[];
+      if(!fl.length){ body.innerHTML='<div style="padding:22px;text-align:center"><div style="font-size:20px;font-weight:800;color:#8a97a5">No filed flights</div><div style="margin-top:6px;color:#5a6773">Nothing found for <b>'+esc(tail)+'</b> on '+esc(date||'the recent window')+'.<br><span style="font-size:12.5px">Only IFR / FlightAware-tracked flights carry a filed route; try an adjacent date.</span></div></div>'; return; }
+      body.innerHTML=fl.map(function(f,i){
+        var pair=(f.origin||'?')+' → '+(f.destination||'?'), t=zhm(f.dep_time), full=compose(f);
+        return '<div class="fr-row" data-i="'+i+'" style="padding:10px 11px;border:1px solid #e5e9ee;border-radius:8px;margin-bottom:8px;cursor:pointer" onmouseover="this.style.background=\'#f4f8ff\'" onmouseout="this.style.background=\'\'">'
+          +'<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:800;font-size:14px">'+esc(pair)+'</span>'+(t?'<span style="font-size:12px;color:#5a6773">dep '+esc(t)+'</span>':'')+'<span style="margin-left:auto;font-size:12px;color:#2f6fed;font-weight:700">Use →</span></div>'
+          +'<div style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#243247;margin-top:5px;word-break:break-word">'+(full?esc(full):'<span style="color:#8a97a5">direct — no filed enroute fixes</span>')+'</div>'
+          +(f.dist?'<div style="font-size:11.5px;color:#8a97a5;margin-top:3px">'+esc(f.dist)+' nm filed</div>':'')+'</div>';
+      }).join('')+'<div style="font-size:11.5px;color:#8a97a5;margin-top:2px">Source: FlightAware AeroAPI (filed route). Verify against your clearance &amp; current NOTAMs.</div>';
+      Array.prototype.forEach.call(body.querySelectorAll('.fr-row'),function(el){ el.onclick=function(){ var f=fl[+el.getAttribute('data-i')]; var full=compose(f); if(!full){ return; } rin.value=full; try{setRoute(full);}catch(e){} close(); render(full); }; });
+    }).catch(function(){ body.innerHTML='<div style="padding:20px;text-align:center;color:#c01722">Could not reach FlightAware.</div>'; });
+  }
+  box.querySelector('#fr-get').onclick=run;
+  box.querySelector('#fr-tail').addEventListener('keydown',function(e){ if(e.key==='Enter') run(); });
+  setTimeout(function(){ var t=box.querySelector('#fr-tail'); if(t&&!t.value) t.focus(); else run(); },40);   // auto-run when a tail is prefilled
 }
 function loadAC(){try{var a=JSON.parse(localStorage.getItem('pw_ac')||'{}');['reg','type','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(k){if(a[k]!=null&&a[k]!=='')document.getElementById(k).value=a[k];});var rr=localStorage.getItem('pw_reg');if(rr){var re=document.getElementById('reg');if(re)re.value=rr.toUpperCase();}}catch(e){}}
 function setRoute(str){if(window.PW_SHARED)return;var rg=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');try{localStorage.setItem('pw_route',str);if(rg)localStorage.setItem('pw_reg',rg);}catch(e){}history.replaceState(null,'',location.pathname+'?route='+encodeURIComponent(str)+(rg?'&reg='+encodeURIComponent(rg):''));}
@@ -779,6 +832,7 @@ document.getElementById('rin').addEventListener('input',function(){var s=this.se
   var rl=document.getElementById('rtlist');
   if(rl) rl.onclick=function(){ if(window.PW_toggleAccount) window.PW_toggleAccount(); };
   var pr=document.getElementById('prefrt'); if(pr) pr.addEventListener('click',openPrefRoutes);
+  var fr=document.getElementById('filedrt'); if(fr) fr.addEventListener('click',openFiledRoutes);
 })();
 // Account gate — no anonymous briefings. Shared (view-only) links bypass. pwauth.js calls PW_onAuth on auth changes.
 function pwIsShared(){ try{ return window.PW_SHARED || new URLSearchParams(location.search).has('ac'); }catch(e){ return false; } }
