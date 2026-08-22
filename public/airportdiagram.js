@@ -473,12 +473,28 @@
     function georefPlate(page, vp, canvas){
       return page.getTextContent().then(function(tc){
         var lat=[], lon=[], Util=(w.pdfjsLib&&w.pdfjsLib.Util);
-        (tc.items||[]).forEach(function(it){ var g=parseTick(it.str); if(!g||!Util) return;
-          var tr=Util.transform(vp.transform, it.transform); (g.geo==='lat'?lat:lon).push({v:g.v, px:tr[4], py:tr[5]}); });
-        function ndist(a){ var s={}; a.forEach(function(o){ s[o.v.toFixed(4)]=1; }); return Object.keys(s).length; }
+        var items=(tc.items||[]).filter(function(it){ return it && it.str && it.str.trim() && Util; });
+        function pos(it){ var tr=Util.transform(vp.transform, it.transform); return {px:tr[4], py:tr[5]}; }
+        // A tick label ("40°49'N") is sometimes one text item, sometimes split into 2–3 fragments by PDF.js.
+        // Try each item, then item+next, then item+next+next (joined and space-joined), and take the first parse.
+        for(var i=0;i<items.length;i++){
+          var a=items[i].str, b=(i+1<items.length)?items[i+1].str:'', c2=(i+2<items.length)?items[i+2].str:'';
+          var tries=[a, a+b, a+' '+b, a+b+c2, a+' '+b+' '+c2], g=null;
+          for(var k=0;k<tries.length;k++){ g=parseTick(tries[k]); if(g) break; }
+          if(!g) continue;
+          var p=pos(items[i]); (g.geo==='lat'?lat:lon).push({v:g.v, px:p.px, py:p.py});
+        }
+        function ndist(a2){ var s={}; a2.forEach(function(o){ s[o.v.toFixed(4)]=1; }); return Object.keys(s).length; }
+        if(w.PWD_DEBUG){ try{ console.log('[PWD georef]', icao, 'textItems='+items.length, 'latTicks='+lat.length, 'lonTicks='+lon.length,
+          'coordish='+JSON.stringify(items.map(function(it){return it.str;}).filter(function(s){ return /[NSEW]/.test(s)&&/\d/.test(s)&&s.length<22; }).slice(0,60))); }catch(e){} }
         if(ndist(lat)<2 || ndist(lon)<2) return null;
-        var fy=linfit(lat.map(function(o){return o.v;}), lat.map(function(o){return o.py;}));   // py = fy.m*lat + fy.b
-        var fx=linfit(lon.map(function(o){return o.v;}), lon.map(function(o){return o.px;}));   // px = fx.m*lon + fx.b
+        // Robust fit: drop the odd mis-parsed tick (>2.5·rms off) and refit when we have enough points.
+        function robust(pts, get){ var xs=pts.map(function(o){return o.v;}), ys=pts.map(get), f=linfit(xs,ys); if(!f) return null;
+          if(pts.length>=4){ var xs2=[],ys2=[]; for(var i=0;i<pts.length;i++){ if(Math.abs(ys[i]-(f.m*xs[i]+f.b))<=2.5*f.rms+1){ xs2.push(xs[i]); ys2.push(ys[i]); } }
+            if(xs2.length>=2 && xs2.length<xs.length){ var f2=linfit(xs2,ys2); if(f2) return f2; } }
+          return f; }
+        var fy=robust(lat, function(o){return o.py;});   // py = fy.m*lat + fy.b
+        var fx=robust(lon, function(o){return o.px;});   // px = fx.m*lon + fx.b
         if(!fy||!fx||!isFinite(fy.m)||!isFinite(fx.m)||fy.m===0||fx.m===0) return null;
         var W=canvas.width, H=canvas.height;
         if(fy.rms>H*0.04 || fx.rms>W*0.04) return null;                       // poor fit (only bites with ≥3 ticks)
