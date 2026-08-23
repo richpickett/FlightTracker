@@ -890,6 +890,6 @@ window.PW_applyFleet=function(f){ if(!f||!f.list) return; PW_applyingFleet=true;
   if(!cur){ var o=(f.def&&f.list[f.def])?f.list[f.def]:null; if(o){ acApply(o); saveAC(); if(typeof render==='function') render((document.getElementById('rin')||{}).value||''); } }  // don't clobber an aircraft already loaded
   fleetPopulate(f.def); } finally { PW_applyingFleet=false; } };
 </script>
-<script src="/pwauth.js"></script>
-<script src="/pw-entitle.js?v=1"></script>
+<script src="/pwauth.js?v=2"></script>
+<script src="/pw-entitle.js?v=2"></script>
 </body></html>
