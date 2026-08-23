@@ -5,7 +5,8 @@ Downloads the current FAA CIFP (ARINC 424) cycle and regenerates
 Run each 28-day AIRAC cycle:  python3 tools/build_navdata.py [YYMMDD]
 If no cycle is given, it probes backward from today for the latest published cycle.
 Requires: python3, curl, unzip. US-only (area code 'USA')."""
-import json, os, sys, subprocess, tempfile, datetime
+import json, os, sys, subprocess, tempfile, datetime, re, zipfile
+import xml.etree.ElementTree as ET
 BASE="https://aeronav.faa.gov/Upload_313-d/CIFP/CIFP_%s.zip"
 # Output dir. The Suite keeps nav-data SOURCE in src/backbone/wx (build_suite.py copies it to public/wx at deploy);
 # FlightTracker serves public/wx directly. Auto-detect so the SAME script works unchanged in both repos.
@@ -34,7 +35,42 @@ def ll(line):
         except: return None
     return None
 
-def build(path):
+# --- Procedures the FAA charts but does NOT encode in the CIFP (radar-vector SIDs, special RNP, etc.).
+# The CIFP zip ships this as "Not_In_CIFP_<cycle>.xlsx". We emit procedures-excluded.json so the app can tell
+# "charted but not coded — fly the plate" apart from "unknown identifier — verify". Stdlib-only xlsx reader (no openpyxl).
+_XNS='{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
+def _xlsx_rows(path):
+    with zipfile.ZipFile(path) as z:
+        shared=[]
+        if 'xl/sharedStrings.xml' in z.namelist():
+            for si in ET.fromstring(z.read('xl/sharedStrings.xml')).findall(_XNS+'si'):
+                shared.append(''.join(t.text or '' for t in si.iter(_XNS+'t')))
+        sheet=sorted(n for n in z.namelist() if n.startswith('xl/worksheets/sheet'))[0]
+        rows=[]
+        for row in ET.fromstring(z.read(sheet)).iter(_XNS+'row'):
+            cells=[]
+            for c in row.findall(_XNS+'c'):
+                v=c.find(_XNS+'v')
+                if v is not None:
+                    val=v.text or ''
+                    if c.get('t')=='s': val=shared[int(val)]
+                else:
+                    is_=c.find(_XNS+'is'); val=''.join(x.text or '' for x in is_.iter(_XNS+'t')) if is_ is not None else ''
+                cells.append(val)
+            rows.append(cells)
+        return rows
+def excluded_procs(xlsx_path):
+    from collections import defaultdict
+    excl=defaultdict(set)
+    for r in _xlsx_rows(xlsx_path)[1:]:              # row 0 is the header (ARINC_ID, TERM_ID)
+        if len(r)>=2 and r[0] and r[1]:
+            apt=r[0].strip().upper()
+            base=re.sub(r'\d+$','',r[1].strip().upper())   # strip trailing revision digit(s): CHRLY7 -> CHRLY
+            if re.fullmatch(r'[A-Z]{3,6}', base):           # keep SID/STAR-style names (matches the client's looksProc)
+                excl[apt].add(base)
+    return {k:sorted(v) for k,v in sorted(excl.items())}
+
+def build(path, xlsx_path=None):
     from collections import defaultdict
     navaids={}; fixes={}
     proc=lambda: {'common':[],'rwy':{},'enr':{}}
@@ -87,8 +123,12 @@ def build(path):
                     'enr':{k:dd(v) for k,v in slot['enr'].items()}}
     w=lambda n,o: json.dump(o,open(os.path.join(OUT,n),'w'),separators=(',',':'))
     w('navaids.json',navaids); w('fixes.json',fixes); w('airways.json',airways); w('procedures.json',out)
-    print("wrote navaids=%d fixes=%d airways=%d airports_with_procs=%d -> %s"%(
-        len(navaids),len(fixes),len(airways),len(out),os.path.abspath(OUT)))
+    excl={}
+    if xlsx_path and os.path.exists(xlsx_path):
+        try: excl=excluded_procs(xlsx_path); w('procedures-excluded.json',excl)
+        except Exception as e: print("WARN: could not parse Not_In_CIFP xlsx:",e)
+    print("wrote navaids=%d fixes=%d airways=%d airports_with_procs=%d excluded_airports=%d -> %s"%(
+        len(navaids),len(fixes),len(airways),len(out),len(excl),os.path.abspath(OUT)))
 
 def main():
     cyc=sys.argv[1] if len(sys.argv)>1 else find_cycle()
@@ -99,7 +139,8 @@ def main():
         subprocess.run(["unzip","-o","-q",z,"-d",td],check=True)
         f=[os.path.join(td,x) for x in os.listdir(td) if x.upper().startswith("FAACIFP")]
         if not f: sys.exit("FAACIFP file not found in archive")
-        build(f[0])
+        xl=[os.path.join(td,x) for x in os.listdir(td) if x.upper().startswith("NOT_IN_CIFP") and x.lower().endswith(".xlsx")]
+        build(f[0], xl[0] if xl else None)
     print("done. Commit the regenerated *.json under %s and deploy."%os.path.relpath(OUT,_REPO))
 
 if __name__=="__main__": main()

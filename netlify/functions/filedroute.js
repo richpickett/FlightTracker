@@ -56,6 +56,8 @@ exports.handler = async (event) => {
         destName: dd.city || dd.name || "",
         route: cleanRoute(f.route || ""),
         dep_time: f.scheduled_out || f.estimated_out || f.scheduled_off || f.filed_departure_time || "",
+        alt: (typeof f.filed_altitude === "number" && f.filed_altitude > 0) ? f.filed_altitude : null, // AeroAPI: 100s of feet (FL)
+        ac_type: (f.aircraft_type || "").toString().toUpperCase(),
         dist: f.route_distance || null
       };
     }).filter(f => f.origin || f.destination || f.route);

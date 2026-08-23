@@ -39,9 +39,12 @@
     if(i<=j) return seq.slice(i, j+1);
     return seq.slice(j, i+1).reverse();
   }
+  // SID/STAR naming convention: a pronounceable name (3–6 letters) + a single revision digit, e.g. CHRLY8, COMIX2, BRDR7.
+  // Airways (J1, V25) have ≤2 letters; fixes/navaids carry no trailing digit — so this cleanly isolates procedure names.
+  function looksProc(s){ return /^[A-Z]{3,6}[1-9]$/.test(s); }
   function expand(routeStr, DB){
-    var t=toks(routeStr), pts=[], unresolved=[], notes=[], ids=[];
-    if(t.length<2){ return {points:[],unresolved:t,notes:['need ≥2 identifiers']}; }
+    var t=toks(routeStr), pts=[], unresolved=[], notes=[], ids=[], procs=[];
+    if(t.length<2){ return {points:[],unresolved:t,notes:['need ≥2 identifiers'],procs:[]}; }
     var depId=t[0], destId=t[t.length-1];
     var last=t.length-1;
     // push a resolved ident onto the id list
@@ -58,7 +61,9 @@
       if(starP){ var seq2=pickTrans(starP,prev,DB)||[]; notes.push('STAR '+tk); seq2.forEach(pushId); continue; }
       if(DB.airways[tk]){ var pc=coord(ids[ids.length-1],DB), nc=coord(next,DB); var sl=airwaySlice(DB.airways[tk], ids[ids.length-1], next, pc&&pc.ll, nc&&nc.ll, DB); notes.push('AWY '+tk); sl.forEach(pushId); continue; }
       // plain fix/navaid/airport
-      if(coord(tk,DB)) pushId(tk); else { unresolved.push(tk); }
+      if(coord(tk,DB)) pushId(tk);
+      else if(looksProc(tk)){ procs.push(tk); notes.push('PROC '+tk+' (not plotted)'); }  // named SID/STAR not in DB — route still plots via its enroute fixes
+      else { unresolved.push(tk); }
     }
     // destination airport
     var dst=airport(destId,DB); if(dst){ pushId(dst.id);} else { unresolved.push(destId); pushId(destId); }
@@ -66,7 +71,7 @@
     ids.forEach(function(id){ var c=coord(id,DB); if(c){ pts.push({id:id,la:c.ll[0],lo:c.ll[1],kind:c.kind}); } else if(unresolved.indexOf(id)<0){ unresolved.push(id); } });
     // drop adjacent dup coords
     var outp=[]; pts.forEach(function(p){ var q=outp[outp.length-1]; if(!q||q.la!==p.la||q.lo!==p.lo) outp.push(p); });
-    return {points:outp, unresolved:unresolved, notes:notes};
+    return {points:outp, unresolved:unresolved, notes:notes, procs:procs};
   }
   var api={expand:expand};
   if(typeof module!=='undefined'&&module.exports) module.exports=api;
