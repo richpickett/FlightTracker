@@ -5,7 +5,7 @@ Downloads the current FAA CIFP (ARINC 424) cycle and regenerates
 Run each 28-day AIRAC cycle:  python3 tools/build_navdata.py [YYMMDD]
 If no cycle is given, it probes backward from today for the latest published cycle.
 Requires: python3, curl, unzip. US-only (area code 'USA')."""
-import json, os, sys, subprocess, tempfile, datetime, re, zipfile
+import json, os, sys, subprocess, tempfile, datetime, re, zipfile, time
 import xml.etree.ElementTree as ET
 BASE="https://aeronav.faa.gov/Upload_313-d/CIFP/CIFP_%s.zip"
 # Output dir. The Suite keeps nav-data SOURCE in src/backbone/wx (build_suite.py copies it to public/wx at deploy);
@@ -14,9 +14,17 @@ _REPO=os.path.join(os.path.dirname(__file__),"..")
 _SRC=os.path.join(_REPO,"src","backbone","wx")
 OUT=_SRC if os.path.isdir(_SRC) else os.path.join(_REPO,"public","wx")
 
-def http_ok(url):
-    r=subprocess.run(["curl","-s","-m","20","-o","/dev/null","-w","%{http_code}",url],capture_output=True,text=True)
-    return r.stdout.strip()=="200"
+def http_ok(url, tries=3):
+    # Probe a cycle URL. 200 -> present; 404 -> definitively not this cycle (let caller step back a day);
+    # anything else (000 conn-fail / 5xx) is transient -> retry with backoff before giving up on this URL.
+    delay=3
+    for i in range(tries):
+        r=subprocess.run(["curl","-s","-m","20","-o","/dev/null","-w","%{http_code}",url],capture_output=True,text=True)
+        code=r.stdout.strip()
+        if code=="200": return True
+        if code=="404": return False
+        if i<tries-1: time.sleep(delay); delay*=2
+    return False
 
 def find_cycle():
     d=datetime.date.today()
@@ -135,7 +143,11 @@ def main():
     print("CIFP cycle:",cyc)
     with tempfile.TemporaryDirectory() as td:
         z=os.path.join(td,"cifp.zip")
-        if subprocess.run(["curl","-s","-m","120","-L","-o",z,BASE%cyc]).returncode!=0: sys.exit("download failed")
+        dl_ok=False
+        for i in range(4):   # -f => non-zero exit on 5xx, so a transient FAA hiccup is retried, not fatal
+            if subprocess.run(["curl","-fsS","-m","120","-L","-o",z,BASE%cyc]).returncode==0: dl_ok=True; break
+            if i<3: print("  download failed — retry %d/3 in %ds"%(i+1,3*(i+1))); time.sleep(3*(i+1))
+        if not dl_ok: sys.exit("download failed after retries")
         subprocess.run(["unzip","-o","-q",z,"-d",td],check=True)
         f=[os.path.join(td,x) for x in os.listdir(td) if x.upper().startswith("FAACIFP")]
         if not f: sys.exit("FAACIFP file not found in archive")

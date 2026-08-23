@@ -24,7 +24,7 @@ Usage:
 Exit codes: 0 ok, 2 sanity gate failed (too few routes -> caller must NOT commit),
 3 download/parse error.
 """
-import argparse, csv, datetime, io, json, os, re, sys, urllib.request, zipfile
+import argparse, csv, datetime, io, json, os, re, sys, time, urllib.request, urllib.error, zipfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_OUT = os.path.join(REPO, "netlify", "functions", "prefroutes-data.js")
@@ -94,11 +94,31 @@ def tag_for(d):
     # FAA uses e.g. 06_Aug_2026
     return d.strftime("%d_%b_%Y")
 
+def _http_get(url, timeout, attempts=4):
+    """GET with retry + exponential backoff on transient failures (5xx / timeout / connection reset).
+    A 4xx (e.g. 404 'cycle not posted yet') propagates immediately so the caller's cycle-fallback can try an older tag —
+    only genuinely transient server errors are retried. FAA NASR endpoints flake with 503s; this rides them out."""
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    delay = 3
+    for i in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code >= 500 and i < attempts - 1:
+                sys.stderr.write("  transient HTTP %d on %s — retry %d/%d in %ds\n" % (e.code, url, i+1, attempts-1, delay)); sys.stderr.flush()
+                time.sleep(delay); delay *= 2; continue
+            raise
+        except (urllib.error.URLError, TimeoutError) as e:
+            if i < attempts - 1:
+                sys.stderr.write("  transient %s on %s — retry %d/%d in %ds\n" % (getattr(e, "reason", e), url, i+1, attempts-1, delay)); sys.stderr.flush()
+                time.sleep(delay); delay *= 2; continue
+            raise
+    raise RuntimeError("unreachable")
+
 def fetch_zip(d):
     url = BASE_URL.format(tag=tag_for(d))
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return url, r.read()
+    return url, _http_get(url, 120)
 
 # --- CSV loading -------------------------------------------------------------
 def read_csv_bytes(raw):
