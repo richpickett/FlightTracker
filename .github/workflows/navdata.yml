@@ -28,7 +28,7 @@ jobs:
         run: python3 tools/build_navdata.py
       - name: Commit & push if changed
         run: |
-          FILES="public/wx/navaids.json public/wx/fixes.json public/wx/airways.json public/wx/procedures.json"
+          FILES="public/wx/navaids.json public/wx/fixes.json public/wx/airways.json public/wx/procedures.json public/wx/procedures-excluded.json"
           if [ -n "$(git status --porcelain $FILES)" ]; then
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
