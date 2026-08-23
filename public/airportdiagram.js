@@ -649,6 +649,11 @@
       map.setView([data.lat,data.lon],15);
       setTimeout(function(){ try{ map.invalidateSize(); }catch(e){} },80);
       var g=L.layerGroup().addTo(map);
+      // Taxiway id labels collide in dense terminals at overview zoom — keep them in their own group and only reveal
+      // them once zoomed in (runway labels + closures always show). Declutters KSLC/KDFW-class fields.
+      var twLabelGrp=L.layerGroup(), TW_LBL_Z=15;
+      function updTwLbl(){ try{ if(map.getZoom()>=TW_LBL_Z){ if(!map.hasLayer(twLabelGrp)) twLabelGrp.addTo(map); } else if(map.hasLayer(twLabelGrp)) map.removeLayer(twLabelGrp); }catch(e){} }
+      map.on('zoomend', updTwLbl);
       var lbl=function(txt,c){ return L.divIcon({className:'',html:'<span style="font:'+(c.f)+';color:'+c.color+';background:rgba(255,255,255,.72);border-radius:3px;padding:0 3px;box-shadow:0 0 0 .5px rgba(0,0,0,.14);white-space:nowrap">'+esc(txt)+'</span>',iconSize:c.sz}); };
       var legEl=document.createElement('div');
       legEl.style.cssText='position:absolute;left:10px;bottom:10px;z-index:1200;background:rgba(255,255,255,.95);border:1px solid #cdd6df;border-radius:9px;padding:9px 13px;font:600 14px/1.35 sans-serif;color:#26313c;box-shadow:0 2px 10px rgba(0,0,0,.22)';
@@ -708,7 +713,7 @@
           (geo.aprons||[]).forEach(function(a){ if(a.c&&a.c.length>2) L.polygon(a.c,{color:'#ffffff',weight:1,opacity:.28,fillColor:'#ffffff',fillOpacity:.09,interactive:false}).addTo(g); });
           (geo.taxiways||[]).forEach(function(tw){ if(!tw.c||tw.c.length<2)return; bounds=bounds.concat(tw.c);
             L.polyline(tw.c,{color:'#eaf1ff',weight:2,opacity:.5,interactive:false}).addTo(g);
-            if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 11px sans-serif',color:'#2a3542',sz:[22,15]})}).addTo(g); }
+            if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 11px sans-serif',color:'#2a3542',sz:[22,15]})}).addTo(twLabelGrp); }
           });
           if(!haveNmsGeom) cl.forEach(function(id){
             var clauses=twClauses[id], drewSomething=false, whole=clauses.some(function(c){return !c.from||!c.to;});
@@ -725,6 +730,7 @@
           if(faaRw.length && !haveNmsGeom) setSrc('· satellite · FAA runways');
           if(haveNmsGeom){ var nz=drawNmsClosures(g); if(nz.pts.length) bounds=bounds.concat(nz.pts); if(nz.drew) setSrc('· satellite · FAA NMS closures'); }
           if(bounds.length) map.fitBounds(bounds,{padding:[6,6]});
+          updTwLbl();
           stopLoading(); closuresPanel();
           if(osmPlaced) osmWarn();
           if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');

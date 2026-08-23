@@ -179,11 +179,11 @@
         +'</div><div class="nf-row">';
     CATS.forEach(function(c){
       var n=(agg.cat&&agg.cat[c])||0, on=!!FILTER.cats[c];
-      h+='<button type="button" class="nf-chip'+(on?' on':'')+'" data-k="cat" data-v="'+c+'">'+c+' <b>'+n+'</b></button>';
+      h+='<button type="button" class="nf-chip'+(on?' on':'')+'" data-k="cat" data-v="'+c+'"'+(n===0?' style="opacity:.4"':'')+'>'+c+' <b>'+n+'</b></button>';
     });
     h+='</div><div class="nf-sec">Source</div><div class="nf-row">';
     [['local','Local',(agg.local||0)],['regional','Regional',(agg.regional||0)]].forEach(function(s){
-      h+='<button type="button" class="nf-chip'+(FILTER.src[s[0]]?' on':'')+'" data-k="src" data-v="'+s[0]+'">'+s[1]+' <b>'+s[2]+'</b></button>';
+      h+='<button type="button" class="nf-chip'+(FILTER.src[s[0]]?' on':'')+'" data-k="src" data-v="'+s[0]+'"'+(s[2]===0?' style="opacity:.4"':'')+'>'+s[1]+' <b>'+s[2]+'</b></button>';
     });
     h+='</div>';
     barEl.innerHTML=h;
