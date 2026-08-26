@@ -17,7 +17,7 @@
     w.__pwdiag = w.__pwdiag || {}; w.__pwdiag[p.id] = { lat:p.la, lon:p.lo, items:arr };
     var hasClose = arr.some(function(n){ var u=(n.text||'').toUpperCase(); return /\b(TWY|RWY)\b/.test(u) && /\bCLSD\b/.test(u); });
     // Always offer the airport diagram / satellite view — even with no RWY/TWY closures. Label reflects whether closures exist.
-    var diagram = w.PWDiagram ? ' · <a class="inline pw-lock" href="#" onclick="try{PWDiagram.open(\''+p.id+'\')}catch(e){};return false;">'+(hasClose?'⊘ Show closed TWY/RWY':'🛰 Airport diagram')+'</a>' : '';
+    var diagram = w.PWDiagram ? ' · <a class="inline pw-lock" href="#" onclick="try{PWDiagram.open(\''+p.id+'\')}catch(e){};return false;">'+(hasClose?'⚠ ':'')+'🛰 FAA/SAT Airport Diagram</a>' : '';
     return diag(p.id) + diagram;
   }
 
