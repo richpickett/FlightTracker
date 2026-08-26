@@ -110,8 +110,8 @@ def build(path, xlsx_path=None):
             elif sub in ('D','E'):
                 apt=line[6:10].strip(); pid=line[13:19].strip()
                 tr=line[20:25].strip(); f=line[29:34].strip()
-                if not f: continue
-                slot=procs[apt][sub][pid]
+                slot=procs[apt][sub][pid]   # register the procedure FIRST so heading/vector SIDs (KMRY MRY5: VA/VM legs, no fix) are known, not "not found"
+                if not f: continue           # this particular leg is a heading/altitude leg with no named fix — nothing to add, but the procedure now exists
                 if tr[:2]=='RW' or tr=='ALL': slot['rwy'].setdefault(tr,[]).append(f)
                 elif tr=='': slot['common'].append(f)
                 else: slot['enr'].setdefault(tr,[]).append(f)
