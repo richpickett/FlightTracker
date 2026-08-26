@@ -63,11 +63,19 @@
     while(m=wRe.exec(cleaned)){
       var ids=[m[1]]; if(m[2]){ (m[2].match(/[A-Z]{1,2}\d{0,2}/g)||[]).forEach(function(x){ids.push(x);}); }
       var tailW=cleaned.slice(m.index, m.index+m[0].length+48), cW=condIsRestrict(tailW), dW=cW?condPhrase(tailW):'';
-      ids.forEach(function(id){ out.push({twy:id,from:null,to:null,cond:cW,detail:dW}); });
+      ids.forEach(function(id){ var seg={twy:id,from:null,to:null,cond:cW,detail:dW}; var an=anchorFor(t,id); if(an && an.ref!==id) seg.anchor=an; out.push(seg); });
     }
     return out;
   }
   function closedTwyIds(text){ var s={}; closedTwySegs(text).forEach(function(c){ s[c.twy]=1; }); return Object.keys(s); }
+  // A "<dir> OF (RWY|TWY) <ref>" phrase tied to a subject taxiway. When the closed taxiway itself has no OSM geometry
+  // (e.g. KSAN TWY A) but the referenced taxiway/runway does, we anchor a labeled marker there instead of drawing nothing.
+  var _DIRW={N:'north',S:'south',E:'east',W:'west',NE:'northeast',NW:'northwest',SE:'southeast',SW:'southwest',NORTH:'north',SOUTH:'south',EAST:'east',WEST:'west',NORTHEAST:'northeast',NORTHWEST:'northwest',SOUTHEAST:'southeast',SOUTHWEST:'southwest'};
+  function anchorFor(text, id){
+    var re=new RegExp('\\bTWY\\s+'+id+'\\b[\\s\\S]{0,16}?\\b(N|S|E|W|NE|NW|SE|SW|NORTH|SOUTH|EAST|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST)\\s+OF\\s+(RWY|TWY)\\s+([A-Z0-9]{1,3})');
+    var m=re.exec(text||''); if(!m) return null;
+    return { dir:_DIRW[m[1]]||m[1].toLowerCase(), kind:m[2], ref:m[3] };
+  }
 
   function normRwy(s){ return String(s||'').toUpperCase().replace(/\d+/g,function(d){return d.length<2?'0'+d:d;}); }
   function oppEnd(id){ var side=(id.match(/[LRC]/)||[''])[0], n=parseInt(id,10)||0, o=((n+18-1)%36)+1;
@@ -672,7 +680,7 @@
         // not stale OSM. Each: {ref:'04/22', c:[[lat,lon],[lat,lon]], ends:[...], faa:true}.
         var faaRw=(((rwj&&rwj.runways)||[]).map(function(r){ var e=r.ends||[]; if(e.length<2||!e[0]||!e[1]||e[0].lat==null||e[1].lat==null)return null;
           return { ref:r.ref||r.id, c:[[e[0].lat,e[0].lon],[e[1].lat,e[1].lon]], ends:e, faa:true }; }).filter(Boolean));
-        var bounds=[], notLocated=[], osmPlaced=false;
+        var bounds=[], notLocated=[], osmPlaced=false, anchorUsed=false;
         var haveNmsGeom=(data.items||[]).some(function(n){ return !isCancel(n) && inWindow(n) && (n.closed||n.conditional) && geomHasPolygon(n.geometry); });
         function matchRc(ref){ if(closedR[ref]) return closedR[ref];
           var cand=null;   // a runway may have different states per end (e.g. 22 fully closed, 04 no-landing) — prefer the hard closure so the surface reads red
@@ -724,6 +732,13 @@
                        L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } }); }
             if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:TW,weight:5,opacity:.95,interactive:false}).addTo(g);
               L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
+            if(!drewSomething){   // no geometry for this taxiway — anchor a marker at a referenced taxiway/runway that IS on the map
+              clauses.some(function(c){ if(!c.anchor) return false;
+                var rw=(c.anchor.kind==='RWY')?rwWays(geo,c.anchor.ref):twWays(geo,c.anchor.ref), mw=mergeWays(rw); if(!mw.length) return false;
+                var pt=mw[Math.floor(mw.length/2)];
+                L.marker(pt,{interactive:false,zIndexOffset:1200,icon:L.divIcon({className:'',iconSize:[0,0],html:'<div style="transform:translate(-50%,-120%);background:'+TW+';color:#fff;font:700 11px/1.2 sans-serif;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)">⚠ TWY '+id+' CLSD<br><span style="font-weight:600;opacity:.95">'+esc(c.anchor.dir)+' of '+esc(c.anchor.kind)+' '+esc(c.anchor.ref)+'</span></div>'})}).addTo(g);
+                bounds.push(pt); drewSomething=true; osmPlaced=true; anchorUsed=true; return true; });
+            }
             if(!drewSomething) notLocated.push('TWY '+id); else osmPlaced=true;
           });
           paintRunways(faaRw.length ? faaRw : (geo.runways||[]).map(function(rw){ return {ref:rw.ref,c:rw.c,faa:false}; }));
@@ -734,6 +749,7 @@
           stopLoading(); closuresPanel();
           if(osmPlaced) osmWarn();
           if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
+          if(anchorUsed) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(⚠ marker shown at the referenced taxiway/runway — the closed taxiway isn’t on the OSM map)</span>');
         }).catch(function(){
           // OSM geometry unreachable — keep satellite; still draw FAA runways + authoritative closures.
           if(faaRw.length) paintRunways(faaRw);
