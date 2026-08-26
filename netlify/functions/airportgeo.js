@@ -48,14 +48,17 @@ exports.handler = async (event) => {
     if (!isFinite(lat) || !isFinite(lon)) return J(400, { error: "need lat/lon or bbox" });
     W = lon - 0.04; E = lon + 0.04; S = lat - 0.03; N = lat + 0.03; }
 
+  // ?refresh=1 forces a re-fetch from Overpass and overwrites the cache — used after an OSM edit (e.g. adding TWY A at KSAN)
+  // so the app picks it up without waiting out the 60-day TTL. Safe to re-run: each call re-overwrites with current OSM data.
+  const REFRESH = /^(1|true|yes)$/i.test(q.refresh || "");
   // Serve from the persistent cache without touching Overpass when we have a recent copy.
   let staleHit = null;
   if (ICAO) {
     const row = await cacheRead(ICAO);
     if (row && row.data) {
       const age = Date.now() - new Date(row.fetched_at).getTime();
-      if (age < GEO_TTL_MS) return J(200, row.data);   // fresh — no Overpass needed
-      staleHit = row.data;                              // stale — try to refresh, but fall back to this if Overpass is down
+      if (!REFRESH && age < GEO_TTL_MS) return J(200, row.data);   // fresh — no Overpass needed
+      staleHit = row.data;                              // stale/refresh — try Overpass, but fall back to this if it's down
     }
   }
 
