@@ -680,7 +680,7 @@
         // not stale OSM. Each: {ref:'04/22', c:[[lat,lon],[lat,lon]], ends:[...], faa:true}.
         var faaRw=(((rwj&&rwj.runways)||[]).map(function(r){ var e=r.ends||[]; if(e.length<2||!e[0]||!e[1]||e[0].lat==null||e[1].lat==null)return null;
           return { ref:r.ref||r.id, c:[[e[0].lat,e[0].lon],[e[1].lat,e[1].lon]], ends:e, faa:true }; }).filter(Boolean));
-        var bounds=[], notLocated=[], osmPlaced=false, anchorUsed=false;
+        var bounds=[], notLocated=[], osmPlaced=false;
         var haveNmsGeom=(data.items||[]).some(function(n){ return !isCancel(n) && inWindow(n) && (n.closed||n.conditional) && geomHasPolygon(n.geometry); });
         function matchRc(ref){ if(closedR[ref]) return closedR[ref];
           var cand=null;   // a runway may have different states per end (e.g. 22 fully closed, 04 no-landing) — prefer the hard closure so the surface reads red
@@ -732,13 +732,9 @@
                        L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } }); }
             if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:TW,weight:5,opacity:.95,interactive:false}).addTo(g);
               L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
-            if(!drewSomething){   // no geometry for this taxiway — anchor a marker at a referenced taxiway/runway that IS on the map
-              clauses.some(function(c){ if(!c.anchor) return false;
-                var rw=(c.anchor.kind==='RWY')?rwWays(geo,c.anchor.ref):twWays(geo,c.anchor.ref), mw=mergeWays(rw); if(!mw.length) return false;
-                var pt=mw[Math.floor(mw.length/2)];
-                L.marker(pt,{interactive:false,zIndexOffset:1200,icon:L.divIcon({className:'',iconSize:[0,0],html:'<div style="transform:translate(-50%,-120%);background:'+TW+';color:#fff;font:700 11px/1.2 sans-serif;padding:3px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)">⚠ TWY '+id+' CLSD<br><span style="font-weight:600;opacity:.95">'+esc(c.anchor.dir)+' of '+esc(c.anchor.kind)+' '+esc(c.anchor.ref)+'</span></div>'})}).addTo(g);
-                bounds.push(pt); drewSomething=true; osmPlaced=true; anchorUsed=true; return true; });
-            }
+            // NOTE: anchoring an unmappable taxiway to a referenced taxiway (e.g. KSAN "TWY A west of A7") was misleading —
+            // OSM's A7 connector runs up toward TWY B, so its midpoint lands nowhere near TWY A. A wrong closure position is
+            // worse than none, so we report it honestly instead. The real fix is TWY A geometry (OSM ref="A").
             if(!drewSomething) notLocated.push('TWY '+id); else osmPlaced=true;
           });
           paintRunways(faaRw.length ? faaRw : (geo.runways||[]).map(function(rw){ return {ref:rw.ref,c:rw.c,faa:false}; }));
@@ -749,7 +745,6 @@
           stopLoading(); closuresPanel();
           if(osmPlaced) osmWarn();
           if(notLocated.length) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(not located on OSM map: '+esc(notLocated.join(', '))+')</span>');
-          if(anchorUsed) foot.insertAdjacentHTML('beforeend',' <span style="color:#8a97a5">(⚠ marker shown at the referenced taxiway/runway — the closed taxiway isn’t on the OSM map)</span>');
         }).catch(function(){
           // OSM geometry unreachable — keep satellite; still draw FAA runways + authoritative closures.
           if(faaRw.length) paintRunways(faaRw);
