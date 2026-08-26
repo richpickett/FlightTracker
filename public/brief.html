@@ -59,7 +59,7 @@
   }
   @media print{ body{background:#fff} .sheet{box-shadow:none;max-width:none} .noprint{display:none!important} .leg{break-inside:avoid} #bmap{height:300px} }
 </style>
-<script src="/wx/route-expand.js?v=3"></script><script src="/prog.js?v=3"></script><script src="/notamtri.js?v=13"></script><script src="/airportdiagram.js?v=32"></script></head>
+<script src="/wx/route-expand.js?v=3"></script><script src="/prog.js?v=3"></script><script src="/notamtri.js?v=14"></script><script src="/airportdiagram.js?v=32"></script></head>
 <body><div id="pw-gate" style="display:none;position:fixed;inset:0;z-index:2500;background:rgba(20,30,50,.55);align-items:center;justify-content:center">
   <div style="background:#fff;max-width:380px;margin:16px;padding:22px;border-radius:12px;box-shadow:0 10px 40px #0005;text-align:center;font-family:Arial,system-ui,sans-serif">
     <div style="font-weight:700;font-size:17px;color:#0b3d91">Personal Wings</div>
@@ -220,7 +220,8 @@ function openFiledRoutes(){
   var rin=document.getElementById('rin');
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   var reg0=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  var date0=(document.getElementById('depdate')||{}).value||new Date().toISOString().slice(0,10);
+  var _dd=(document.getElementById('depdate')||{}).value||''; var _n=new Date();   // Filed Routes date: the briefing's departure date if set, else today (local)
+  var date0=_dd||(_n.getFullYear()+'-'+('0'+(_n.getMonth()+1)).slice(-2)+'-'+('0'+_n.getDate()).slice(-2));
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(11,22,34,.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
   var box=document.createElement('div');
@@ -360,7 +361,7 @@ function render(routeStr){
   var regv=((document.getElementById('reg')||{}).value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   var h='<h1>'+(regv?regv+' · ':'')+pts.map(function(p){return p.id;}).join(' → ')+'</h1>';
   h+='<div class="sub">'+pts.map(function(p){return p.name;}).join(' · ')+'</div>';
-  h+='<div id="costbar" class="sub" style="margin-top:2px"></div>';
+  h+='<div id="costbar" class="sub" style="margin-top:2px;display:none"></div>';
   h+='<div class="sub">'+(regv?'<b>'+regv+'</b> · ':'')+depTxt+' · cruise <b>'+CR.toLocaleString()+'′</b> (~'+STATE.lv[2]+') · TAS '+TAS+' · '+USABLE+' '+FU+' / '+GPH+' '+FLU+' · '+(pts.length-1)+' legs'+(miss.length?' · <span style="color:#c00">unknown: '+miss.join(', ')+'</span>':'')+procAdvisory(procs,pts)+'</div>';
   h+='<h2>Route</h2><div id="mapwrap"><div id="bmap"></div><div class="mapleg" id="mapleg"></div></div><div id="narr"></div><div id="ov"></div><h2>Legs</h2><div id="legsec"></div><div id="condsum"></div>';
   h+='<h2>Current conditions &amp; TAF</h2><div id="wx"></div>';
@@ -745,9 +746,12 @@ var PW_COST={places:0,notam:0,wx:0,llmUSD:0,llmTok:0,llm:{}};
 var COST_UNIT={places:0.035, notam:0.0038};   // USD/call: Google Places Enterprise Nearby; SkyLink Basic ($19/5000)
 function costTotal(){ return PW_COST.places*COST_UNIT.places + PW_COST.notam*COST_UNIT.notam + PW_COST.llmUSD; }
 function updateCostBar(){ var el=document.getElementById('costbar'); if(!el) return;
-  var parts=[]; if(PW_COST.notam)parts.push('NOTAM ×'+PW_COST.notam); if(PW_COST.places)parts.push('Food ×'+PW_COST.places); if(PW_COST.wx)parts.push('WX ×'+PW_COST.wx);
-  if(PW_COST.llmTok)parts.push('AI '+PW_COST.llmTok.toLocaleString()+' tok $'+PW_COST.llmUSD.toFixed(4));
-  el.innerHTML='Est. cost this briefing: <b>$'+costTotal().toFixed(4)+'</b>'+(parts.length?' <span style="color:#889">· '+parts.join(' · ')+'</span>':' <span style="color:#889">(free sources only)</span>')+' <a href="/wx/cost.html" target="_blank" style="color:#889" title="Cost report across all briefings">· report ↗</a>';
+  if(!window.PW_isAdmin){ el.style.display='none'; }   // cost visibility is admin-only; usage is still logged below
+  else { el.style.display='';
+    var parts=[]; if(PW_COST.notam)parts.push('NOTAM ×'+PW_COST.notam); if(PW_COST.places)parts.push('Food ×'+PW_COST.places); if(PW_COST.wx)parts.push('WX ×'+PW_COST.wx);
+    if(PW_COST.llmTok)parts.push('AI '+PW_COST.llmTok.toLocaleString()+' tok $'+PW_COST.llmUSD.toFixed(4));
+    el.innerHTML='Est. cost this briefing: <b>$'+costTotal().toFixed(4)+'</b>'+(parts.length?' <span style="color:#889">· '+parts.join(' · ')+'</span>':' <span style="color:#889">(free sources only)</span>')+' <a href="/wx/cost.html" target="_blank" style="color:#889" title="Cost report across all briefings">· report ↗</a>';
+  }
   PW_scheduleLog(); }
 // Persist each briefing's metered usage to Supabase (debounced until costs settle; deduped per route within 10 min).
 var PW_LOG={t:null,sig:'',at:0};
@@ -861,7 +865,8 @@ document.getElementById('rin').addEventListener('input',function(){var s=this.se
 // Account gate — no anonymous briefings. Shared (view-only) links bypass. pwauth.js calls PW_onAuth on auth changes.
 function pwIsShared(){ try{ return window.PW_SHARED || new URLSearchParams(location.search).has('ac'); }catch(e){ return false; } }
 function pwGate(authed){ var g=document.getElementById('pw-gate'); if(g) g.style.display=(authed||pwIsShared())?'none':'flex'; }
-window.PW_onAuth=function(a){ pwGate(a); pwMarkFree(); };
+window.PW_onAuth=function(a){ pwGate(a); pwMarkFree(); if(!a){ window.PW_isAdmin=false; try{updateCostBar();}catch(e){} } };
+window.PW_onAdmin=function(a){ try{ updateCostBar(); }catch(e){} };   // reveal/hide the cost line once admin status resolves
 // Lock badge: shows 🔒 on any .pw-lock control while the account is free (body.pw-free).
 (function(){ var s=document.createElement('style'); s.textContent='.pw-free .pw-lock::after{content:"🔒";margin-left:5px;font-size:.82em;opacity:.85;text-transform:none}'; document.head.appendChild(s); })();
 function pwMarkFree(){ try{ document.body.classList.add('pw-free');
@@ -914,6 +919,6 @@ window.PW_applyFleet=function(f){ if(!f||!f.list) return; PW_applyingFleet=true;
   if(!cur){ var o=(f.def&&f.list[f.def])?f.list[f.def]:null; if(o){ acApply(o); saveAC(); if(typeof render==='function') render((document.getElementById('rin')||{}).value||''); } }  // don't clobber an aircraft already loaded
   fleetPopulate(f.def); } finally { PW_applyingFleet=false; } };
 </script>
-<script src="/pwauth.js?v=2"></script>
+<script src="/pwauth.js?v=3"></script>
 <script src="/pw-entitle.js?v=2"></script>
 </body></html>

@@ -16,8 +16,9 @@
   function diagLinks(p, arr){
     w.__pwdiag = w.__pwdiag || {}; w.__pwdiag[p.id] = { lat:p.la, lon:p.lo, items:arr };
     var hasClose = arr.some(function(n){ var u=(n.text||'').toUpperCase(); return /\b(TWY|RWY)\b/.test(u) && /\bCLSD\b/.test(u); });
-    var closures = (hasClose && w.PWDiagram) ? ' · <a class="inline pw-lock" href="#" onclick="try{PWDiagram.open(\''+p.id+'\')}catch(e){};return false;">⊘ Show closed TWY/RWY</a>' : '';
-    return diag(p.id) + closures;
+    // Always offer the airport diagram / satellite view — even with no RWY/TWY closures. Label reflects whether closures exist.
+    var diagram = w.PWDiagram ? ' · <a class="inline pw-lock" href="#" onclick="try{PWDiagram.open(\''+p.id+'\')}catch(e){};return false;">'+(hasClose?'⊘ Show closed TWY/RWY':'🛰 Airport diagram')+'</a>' : '';
+    return diag(p.id) + diagram;
   }
 
   // Dedup signature — collapses FNS+SWIM double-listings and reissues (identical/near-identical text).

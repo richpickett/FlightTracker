@@ -117,6 +117,7 @@
   function fetchProfile(){ if(!USER) return;
     SB.from('profiles').select('*').eq('id',USER.id).single().then(function(r){
       PROFILE=r.data||{};
+      window.PW_isAdmin=(PROFILE.is_admin===true); if(window.PW_onAdmin){ try{ window.PW_onAdmin(window.PW_isAdmin); }catch(e){} }  // gate admin-only UI (e.g. briefing cost line)
       var rr=$('#pw-reg'); if(rr) rr.value=PROFILE.default_reg||'';
       // aircraft fleet sync: server wins if it holds aircraft; otherwise push up any local fleet (first-device upload)
       var sf=PROFILE.fleet;
