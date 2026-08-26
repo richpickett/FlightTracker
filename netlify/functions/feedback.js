@@ -11,7 +11,7 @@
 //
 // Env (Netlify → Environment variables):
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE (secret), SUPABASE_ANON_KEY
-//   POSTMARK_TOKEN, POSTMARK_FROM (verified sender), FEEDBACK_TO (defaults to rich@personalwings.com)
+//   POSTMARK_TOKEN, POSTMARK_FROM (verified sender), FEEDBACK_TO (recipient; falls back to POSTMARK_FROM)
 
 const DEF_URL = "https://dbkbigxeabzfzoqommtf.supabase.co";
 const DEF_ANON = "sb_publishable_7BOSD_FB87NfHvyo78gD9g_fYpWfhIX";
@@ -52,7 +52,7 @@ async function currentUser(event) {
 async function emailAdmin(row) {
   const token = process.env.POSTMARK_TOKEN, from = process.env.POSTMARK_FROM;
   if (!token || !from) return { skipped: "postmark not configured" };
-  const to = process.env.FEEDBACK_TO || "rich@personalwings.com";
+  const to = process.env.FEEDBACK_TO || from;   // no hardcoded address (Netlify secrets scanning) — set FEEDBACK_TO in env
   const kind = (row.kind || "other").toUpperCase();
   const ctx = row.context || {};
   const lines = [
