@@ -220,6 +220,20 @@
     var a1=crossingArc(S,b1), a2=crossingArc(S,b2);
     var seg=subPoly(S,a1,a2); return seg.length>1?seg:null;
   }
+  // Portion of a taxiway on one side of a referenced taxiway/runway — for "TWY A WEST OF TWY A7" style closures.
+  // Returns only the arc from where the reference crosses the taxiway out to the endpoint on the requested side;
+  // null when that side isn't mapped (so we never over-draw the whole taxiway for a directional closure).
+  var _LET2={west:'W',east:'E',north:'N',south:'S',northwest:'NW',northeast:'NE',southwest:'SW',southeast:'SE'};
+  function directionalSegment(geo, twy, dir, refKind, refId){
+    var S=mergeWays(twWays(geo,twy)); if(S.length<2) return null;
+    var refSegs=(String(refKind).toUpperCase()==='RWY')?segList(rwWays(geo,refId)):segList(twWays(geo,refId));
+    if(!refSegs || !refSegs.length) return null;
+    var DIR=_LET2[String(dir).toLowerCase()]||String(dir).toUpperCase();
+    var cross=crossingArc(S,refSegs), total=polyLenFt(S);
+    var endArc=(pickEndIdx(S,DIR)===0)?0:total;   // arclength of the endpoint on the requested side
+    var seg=subPoly(S, cross, endArc);
+    return (seg.length>1 && polyLenFt(seg)>60) ? seg : null;   // ignore a sliver when the taxiway doesn't actually reach the reference
+  }
 
   function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
@@ -547,11 +561,16 @@
             L.polygon(ll,{color:col,weight:1.5,opacity:.95,fillColor:col,fillOpacity:.3,interactive:false}).addTo(g); drew++; }); }); });
       });
       if(geo && !geo.error && (geo.taxiways||[]).length && !haveNmsGeomNow()){
-        cl.forEach(function(id){ var clauses=twClauses[id], whole=clauses.some(function(c){return !c.from||!c.to;}), TW=twCond[id]?AMBER:RED, did=false;
-          if(!whole){ clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c); if(seg){ L.polyline(PL(seg),{color:TW,weight:6,opacity:.97,interactive:false}).addTo(g);
-            L.polyline(PL(seg),{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); did=true; drew++; } }); }
-          if(!did){ var S=mergeWays(twWays(geo,id)); if(S.length>1){ L.polyline(PL(S),{color:TW,weight:5,opacity:.95,interactive:false}).addTo(g);
-            L.polyline(PL(S),{color:'#fff',weight:1.3,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drew++; } }
+        cl.forEach(function(id){ var clauses=twClauses[id], TW=twCond[id]?AMBER:RED, trueWhole=false;
+          var S=mergeWays(twWays(geo,id));
+          function paint(seg,w){ if(!seg||seg.length<2)return; L.polyline(PL(seg),{color:TW,weight:w,opacity:.96,interactive:false}).addTo(g);
+            L.polyline(PL(seg),{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drew++; }
+          clauses.forEach(function(c){
+            if(c.anchor && c.anchor.kind){ paint(directionalSegment(geo,id,c.anchor.dir,c.anchor.kind,c.anchor.ref),6); }   // "TWY A WEST OF A7"
+            else if(c.from && c.to){ paint(taxiwaySegment(geo,c),6); }
+            else { trueWhole=true; }
+          });
+          if(trueWhole && S.length>1) paint(S,5);
         });
       }
       return drew;
@@ -724,17 +743,17 @@
             if(tw.ref){ var mpt=tw.c[Math.floor(tw.c.length/2)]; L.marker(mpt,{interactive:false,icon:lbl(tw.ref,{f:'700 11px sans-serif',color:'#2a3542',sz:[22,15]})}).addTo(twLabelGrp); }
           });
           if(!haveNmsGeom) cl.forEach(function(id){
-            var clauses=twClauses[id], drewSomething=false, whole=clauses.some(function(c){return !c.from||!c.to;});
+            var clauses=twClauses[id], drewSomething=false, trueWhole=false;
             var TW=twCond[id]?AMBER:RED;   // aircraft-restriction-only taxiway => amber advisory, else red closure
             var S=mergeWays(twWays(geo,id));
-            if(!whole){ clauses.forEach(function(c){ var seg=taxiwaySegment(geo,c);
-              if(seg){ L.polyline(seg,{color:TW,weight:6,opacity:.97,interactive:false}).addTo(g);
-                       L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; } }); }
-            if((whole || !drewSomething) && S.length>1){ L.polyline(S,{color:TW,weight:5,opacity:.95,interactive:false}).addTo(g);
-              L.polyline(S,{color:'#fff',weight:1.4,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
-            // NOTE: anchoring an unmappable taxiway to a referenced taxiway (e.g. KSAN "TWY A west of A7") was misleading —
-            // OSM's A7 connector runs up toward TWY B, so its midpoint lands nowhere near TWY A. A wrong closure position is
-            // worse than none, so we report it honestly instead. The real fix is TWY A geometry (OSM ref="A").
+            function paint(seg,w){ if(!seg||seg.length<2)return; L.polyline(seg,{color:TW,weight:w,opacity:.96,interactive:false}).addTo(g);
+              L.polyline(seg,{color:'#fff',weight:1.5,opacity:.9,dashArray:'2 5',interactive:false}).addTo(g); drewSomething=true; }
+            clauses.forEach(function(c){
+              if(c.anchor && c.anchor.kind){ paint(directionalSegment(geo,id,c.anchor.dir,c.anchor.kind,c.anchor.ref),6); }   // "TWY A WEST OF A7"
+              else if(c.from && c.to){ paint(taxiwaySegment(geo,c),6); }                                                       // "TWY A BTN x AND y"
+              else { trueWhole=true; }                                                                                          // whole taxiway closed
+            });
+            if(trueWhole && S.length>1) paint(S,5);
             if(!drewSomething) notLocated.push('TWY '+id); else osmPlaced=true;
           });
           paintRunways(faaRw.length ? faaRw : (geo.runways||[]).map(function(rw){ return {ref:rw.ref,c:rw.c,faa:false}; }));
