@@ -230,8 +230,16 @@ if (require.main === module) {
       // Incremental runs every N minutes and reads fall back to SkyLink if the mirror
       // goes briefly stale — so a transient edge/WAF blip (403/429/5xx) that survived the
       // in-run retries is a soft skip, NOT a job failure (avoids noise notices). The next
-      // run catches up. Bulk (daily) and any non-transient error still fail loudly.
-      if (mode !== "bulk" && isTransient(e)) { console.error("nms-sync: transient failure on '" + mode + "' — skipping this run, next run will catch up."); process.exit(0); }
+      // run catches up. Non-transient errors (e.g. 401 bad creds) still fail loudly.
+      if (isTransient(e)) {
+        if (mode !== "bulk") { console.error("nms-sync: transient failure on '" + mode + "' — skipping this run, next run will catch up."); process.exit(0); }
+        // Bulk: the FAA edge/WAF intermittently 403s specific GitHub-runner IPs. Skip such a blip when a recent bulk
+        // succeeded (incrementals keep data current); only fail loudly if bulk has actually been stale too long.
+        let ageH = Infinity;
+        try { const st = await sbGetState(); if (st && st.last_bulk) ageH = (Date.now() - Date.parse(st.last_bulk)) / 3600000; } catch (_) {}
+        if (ageH < 48) { console.error("nms-sync: bulk hit a transient edge/WAF block (last good bulk " + ageH.toFixed(1) + "h ago) — skipping; incrementals keep data current."); process.exit(0); }
+        console.error("nms-sync: bulk transient failure AND last good bulk is " + (isFinite(ageH) ? ageH.toFixed(1) + "h" : "unknown") + " old — failing loudly.");
+      }
       process.exit(1);
     }
   })();
