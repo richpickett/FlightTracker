@@ -921,10 +921,10 @@ function condSum(cats,pts){var bad=pts.filter(function(p){return cats[p.id]&&cat
   var el=document.getElementById('condsum');if(el)el.innerHTML=bad.length?'<div class="flag">⚠ Below-VFR fields now: <b>'+bad.join(', ')+'</b> — verify TAF trend, keep an approach-equipped alternate.</div>':'';
   var nc=document.getElementById('narrcond');if(nc)nc.innerHTML=bad.length?'Right now '+bad.join(', ')+' are below VFR — watch those and their TAF trends. ':'';}
 
-document.getElementById('go').addEventListener('click',function(){render(document.getElementById('rin').value);});
+document.getElementById('go').addEventListener('click',function(){saveAC();render(document.getElementById('rin').value);});
 document.getElementById('rin').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();render(this.value);}});
 document.getElementById('rin').addEventListener('input',function(){var s=this.selectionStart,e2=this.selectionEnd,u=this.value.toUpperCase();if(u!==this.value){this.value=u;try{this.setSelectionRange(s,e2);}catch(_){}}});
-['reg','type','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(id){document.getElementById(id).addEventListener('change',function(){render(document.getElementById('rin').value);});});
+['reg','type','depdate','dep','deptz','cruise','tas','usable','gph','rsv','funit','flowunit','amax','amin'].forEach(function(id){document.getElementById(id).addEventListener('change',function(){saveAC();render(document.getElementById('rin').value);});});
 // Save Route / Saved Routes — surface the account route store (pwauth.js) as quick-access buttons.
 (function(){
   var rs=document.getElementById('rtsave');

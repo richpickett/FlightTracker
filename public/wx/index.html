@@ -828,7 +828,7 @@ function setReg(v,explicit){
   REG=v; if(explicit) regExplicit=true;
   histTrack=[]; histLive=null; fr24Reg='';
   var ri=document.getElementById('regin'); if(ri && ri.value.toUpperCase()!==v) ri.value=v;
-  try{ if(v) localStorage.setItem('pw_reg',v); }catch(e){}
+  try{ if(v) localStorage.setItem('pw_track_reg',v); }catch(e){}
   var lbl=v||'—';
   var h1=document.querySelector('#hdr h1'); if(h1){ h1.innerHTML = (STATIONS&&STATIONS.length>1) ? (lbl+' · '+STATIONS.map(function(s){return s[0];}).join(' → ')) : (lbl+' · live tracking'); }
   resetAdsb();
@@ -854,7 +854,7 @@ Promise.all([_pwJSON('airports.json'),_pwJSON('navaids.json'),_pwJSON('fixes.jso
   var initRoute = urlRoute || saved || (ROUTE.sun||[]).join(' ');
   if(ri) ri.value = initRoute;
   var urlReg=null,savedReg=null; try{ urlReg=new URLSearchParams(location.search).get('reg'); }catch(e){}
-  try{ savedReg=localStorage.getItem('pw_reg'); }catch(e){}
+  try{ savedReg=localStorage.getItem('pw_track_reg'); }catch(e){}
   if(urlReg||savedReg) regExplicit=true;
   REG=((urlReg||savedReg||'').toUpperCase().replace(/[^A-Z0-9]/g,''));
   var rg=document.getElementById('regin'); if(rg) rg.value=REG;
