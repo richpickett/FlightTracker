@@ -768,9 +768,20 @@ function fetchADSB(){
     fetch('https://api.airplanes.live/v2/reg/'+q).then(function(r){return r.json();}).catch(function(){return {};}),
     fetch('https://api.airplanes.live/v2/callsign/'+q).then(function(r){return r.json();}).catch(function(){return {};})
   ]).then(function(res){
-    function pick(j){ var a=(j&&j.ac)||[]; for(var i=0;i<a.length;i++){ if(a[i].lat!=null) return a[i]; } return null; }
-    var ac=pick(res[0])||pick(res[1]);
-    if(!ac){ ensureFR24(); if(histLive){ ac=Object.assign({}, histLive); ac.seen_pos=histLiveTs?((Date.now()-histLiveTs)/1000):null; } }
+    function ageOf(a){ return (a && a.seen_pos!=null) ? a.seen_pos : Infinity; }   // seconds since last position report
+    function pick(j){ var a=(j&&j.ac)||[], best=null; for(var i=0;i<a.length;i++){ if(a[i].lat==null) continue; if(best===null || ageOf(a[i])<ageOf(best)) best=a[i]; } return best; }
+    var acR=pick(res[0]), acC=pick(res[1]);                              // reg hit, callsign hit
+    var ac = (acR&&acC) ? (ageOf(acR)<=ageOf(acC)?acR:acC) : (acR||acC); // prefer the fresher fix, not just the reg hit
+    // airplanes.live coverage can be thin en-route (mountains); when its only fix is stale — e.g. the tail's
+    // last-seen ground position before departure — fall to FR24 (better coverage) whenever FR24's fix is fresher.
+    var STALE=120;
+    if(!ac || ageOf(ac)>STALE){
+      ensureFR24();
+      if(histLive){
+        var frAge = histLiveTs ? (Date.now()-histLiveTs)/1000 : Infinity;
+        if(!ac || frAge < ageOf(ac)){ ac=Object.assign({}, histLive); ac.seen_pos=(frAge===Infinity?null:frAge); }
+      }
+    }
     if(!ac){ if(st) st.textContent=REG+': no ADS-B contact (on ground / out of coverage)'; return; }
     var flight=(ac.flight||'').trim(), reg=(ac.r||'').trim();
     var name=flight||reg||REG, sub=(reg&&reg!==name)?reg:'';
