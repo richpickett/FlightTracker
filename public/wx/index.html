@@ -566,6 +566,17 @@ function ensureFR24(force){
     histLive=(j&&j.live)?j.live:null; histLiveTs=(histLive&&histLive.ts)?histLive.ts:0;
   }).catch(function(){});
 }
+function ensureAeroPos(force){
+  if(!REG) return;
+  var now=Date.now();
+  if(aeroReg!==REG){ aeroLive=null; aeroLiveTs=0; }               // new tail — drop the previous fix
+  if(!force && aeroReg===REG && (now-aeroAt)<60000) return;       // AeroAPI bills per call; throttle to <=1/60s per tail
+  aeroAt=now; aeroReg=REG; var my=++aeroSeq;
+  fetch('/.netlify/functions/acpos?ident='+encodeURIComponent(REG)).then(function(r){return r.json();}).then(function(j){
+    if(my!==aeroSeq) return;
+    aeroLive=(j&&j.live)?j.live:null; aeroLiveTs=(aeroLive&&aeroLive.ts)?aeroLive.ts:0;
+  }).catch(function(){});
+}
 function trailPosAt(tMs){
   var src=(histTrack&&histTrack.length>=2)?histTrack:trailPts;   // FR24 recorded track if available, else the live trail
   var n=src.length; if(n<2) return null;
@@ -740,7 +751,7 @@ document.getElementById('follow').addEventListener('change',function(e){ followO
 
 // ---------- live ADS-B position (airplanes.live, by registration) ----------
 var REG='', regExplicit=false;   // tail # to track; regExplicit = set via shared link or manual entry (beats profile default)
-var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsbTimer=null, adsbFollow=false, histTrack=[], histLive=null, histLiveTs=0, fr24At=0, fr24Reg='', histSeq=0;
+var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsbTimer=null, adsbFollow=false, histTrack=[], histLive=null, histLiveTs=0, fr24At=0, fr24Reg='', histSeq=0, aeroLive=null, aeroLiveTs=0, aeroAt=0, aeroReg='', aeroSeq=0;
 function resetAdsb(){ if(adsbMarker){adsbGroup.removeLayer(adsbMarker);adsbMarker=null;} if(adsbTrail){adsbGroup.removeLayer(adsbTrail);adsbTrail=null;} trailPts=[]; }
 function planeIcon(track,color){
   var rot=(track==null||isNaN(track))?0:track;
@@ -774,13 +785,16 @@ function fetchADSB(){
     var ac = (acR&&acC) ? (ageOf(acR)<=ageOf(acC)?acR:acC) : (acR||acC); // prefer the fresher fix, not just the reg hit
     // airplanes.live coverage can be thin en-route (mountains); when its only fix is stale — e.g. the tail's
     // last-seen ground position before departure — fall to FR24 (better coverage) whenever FR24's fix is fresher.
+    // airplanes.live now blocks browser access (CORS) and charges for its API. When it returns no/stale fix,
+    // escalate to the server-side sources — FlightAware AeroAPI (reliable, ~1/min) and FR24 — and plot the freshest.
     var STALE=120;
     if(!ac || ageOf(ac)>STALE){
-      ensureFR24();
-      if(histLive){
-        var frAge = histLiveTs ? (Date.now()-histLiveTs)/1000 : Infinity;
-        if(!ac || frAge < ageOf(ac)){ ac=Object.assign({}, histLive); ac.seen_pos=(frAge===Infinity?null:frAge); }
-      }
+      ensureAeroPos(); ensureFR24();
+      var cands=[];
+      if(aeroLive) cands.push({p:aeroLive, age:(aeroLiveTs?(Date.now()-aeroLiveTs)/1000:Infinity)});
+      if(histLive) cands.push({p:histLive, age:(histLiveTs?(Date.now()-histLiveTs)/1000:Infinity)});
+      cands.sort(function(a,b){return a.age-b.age;});
+      if(cands.length && (!ac || cands[0].age<ageOf(ac))){ ac=Object.assign({}, cands[0].p); ac.seen_pos=(cands[0].age===Infinity?null:cands[0].age); }
     }
     if(!ac){ if(st) st.textContent=REG+': no ADS-B contact (on ground / out of coverage)'; return; }
     var flight=(ac.flight||'').trim(), reg=(ac.r||'').trim();
