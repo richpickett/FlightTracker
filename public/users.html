@@ -44,6 +44,7 @@
   <div class="bar" id="tools" style="display:none">
     <input id="q" placeholder="Filter by name or email">
     <button id="csv" class="sec">Export CSV</button>
+    <button id="copyem" class="sec" title="Copy the current filter&#39;s email addresses to the clipboard — paste into the BCC field of your email so recipients aren&#39;t exposed">📋 Copy emails (BCC)</button>
   </div>
   <div id="msg"></div>
   <div id="summary" class="muted"></div>
@@ -122,7 +123,19 @@ function csv(){
   var out=rows.map(function(r){return r.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
   var a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(out); a.download='personal-wings-users.csv'; a.click();
 }
-$('q').oninput=draw; $('csv').onclick=csv;
+// Copy the current filter's emails (deduped) for pasting into a BCC field — recipients stay hidden from each other.
+function copyEmails(){
+  if(!USERS.length){show('err','Load users first.');return;}
+  var q=($('q').value||'').trim().toLowerCase();
+  var list=USERS.filter(function(u){return !q || (u.name+' '+u.email).toLowerCase().indexOf(q)>=0;});
+  var seen={}, out=[]; list.forEach(function(u){ var e=(u.email||'').trim(); if(e){ var k=e.toLowerCase(); if(!seen[k]){seen[k]=1;out.push(e);} } });
+  if(!out.length){show('err','No emails in the current filter.');return;}
+  var text=out.join(', ');
+  function done(){ show('ok','Copied '+out.length+' email'+(out.length>1?'s':'')+' — paste into the BCC field of your email.'); }
+  function fallback(){ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){ show('err','Copy failed — select the addresses manually.'); } document.body.removeChild(ta); }
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done).catch(fallback); } else fallback();
+}
+$('q').oninput=draw; $('csv').onclick=csv; $('copyem').onclick=copyEmails;
 fetch('/wx/wx-config.json',{cache:'no-store'}).then(function(r){return r.json();}).then(function(cfg){
   SB=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey);
   SB.auth.getSession().then(function(r){ SESSION=r.data?r.data.session:null; renderAuth(); if(SESSION) load(); });
