@@ -53,7 +53,10 @@ exports.handler = async (event) => {
       posStatus = pr.status;
       const txt = await pr.text().catch(() => "");
       if (DBG) posBody = txt.slice(0, 300);
-      if (pr.ok) { try { live = shape(f, JSON.parse(txt)); } catch (e) {} }
+      if (pr.ok) { try { const pj = JSON.parse(txt);
+        // /flights/{id}/position wraps the current fix in last_position (or a positions[] array), not at top level
+        const pos = pj.last_position || (Array.isArray(pj.positions) && pj.positions.length ? pj.positions[pj.positions.length - 1] : null) || pj;
+        live = shape(f, pos); } catch (e) {} }
     }
     if (debug) { debug.posStatus = posStatus; if (posBody != null) debug.posBody = posBody; }
     return out({ ident, live, note: live ? undefined : "no position", debug });
