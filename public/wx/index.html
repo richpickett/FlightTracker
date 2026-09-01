@@ -749,7 +749,7 @@ function stopGPS(){ if(watchId!=null){ navigator.geolocation.clearWatch(watchId)
 document.getElementById('gps').addEventListener('click',function(){ if(watchId==null) startGPS(); else stopGPS(); });
 document.getElementById('follow').addEventListener('change',function(e){ followOn=e.target.checked; if(followOn&&osMarker) map.panTo(osMarker.getLatLng()); });
 
-// ---------- live ADS-B position (airplanes.live, by registration) ----------
+// ---------- live ADS-B position: adsb.lol proxy (free, unfiltered) -> AeroAPI/FR24 fallback ----------
 var REG='', regExplicit=false;   // tail # to track; regExplicit = set via shared link or manual entry (beats profile default)
 var adsbGroup=L.layerGroup(), adsbMarker=null, adsbTrail=null, trailPts=[], adsbTimer=null, adsbFollow=false, histTrack=[], histLive=null, histLiveTs=0, fr24At=0, fr24Reg='', histSeq=0, aeroLive=null, aeroLiveTs=0, aeroAt=0, aeroReg='', aeroSeq=0;
 function resetAdsb(){ if(adsbMarker){adsbGroup.removeLayer(adsbMarker);adsbMarker=null;} if(adsbTrail){adsbGroup.removeLayer(adsbTrail);adsbTrail=null;} trailPts=[]; }
@@ -773,11 +773,11 @@ function fetchADSB(){
   var st=document.getElementById('adsb-status');
   if(!REG){ if(st) st.textContent='Enter a tail # or flight number to track'; return; }
   var q=encodeURIComponent(REG);
-  // Query BOTH registration and callsign — a tail (N13709) matches /reg/, an airline
+  // Query BOTH registration and callsign via the adsb.lol proxy — a tail (N13709) matches /reg/, an airline
   // flight number (UAL1093) matches /callsign/. Prefer a positioned reg hit, else callsign.
   Promise.all([
-    fetch('https://api.airplanes.live/v2/reg/'+q).then(function(r){return r.json();}).catch(function(){return {};}),
-    fetch('https://api.airplanes.live/v2/callsign/'+q).then(function(r){return r.json();}).catch(function(){return {};})
+    fetch('/.netlify/functions/adsb?type=reg&q='+q).then(function(r){return r.json();}).catch(function(){return {};}),
+    fetch('/.netlify/functions/adsb?type=callsign&q='+q).then(function(r){return r.json();}).catch(function(){return {};})
   ]).then(function(res){
     function ageOf(a){ return (a && a.seen_pos!=null) ? a.seen_pos : Infinity; }   // seconds since last position report
     function pick(j){ var a=(j&&j.ac)||[], best=null; for(var i=0;i<a.length;i++){ if(a[i].lat==null) continue; if(best===null || ageOf(a[i])<ageOf(best)) best=a[i]; } return best; }
