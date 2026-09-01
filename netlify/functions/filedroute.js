@@ -57,6 +57,7 @@ exports.handler = async (event) => {
         route: cleanRoute(f.route || ""),
         dep_time: f.scheduled_out || f.estimated_out || f.scheduled_off || f.filed_departure_time || "",
         alt: (typeof f.filed_altitude === "number" && f.filed_altitude > 0) ? f.filed_altitude : null, // AeroAPI: 100s of feet (FL)
+        speed: (typeof f.filed_airspeed === "number" && f.filed_airspeed > 0) ? f.filed_airspeed : null, // AeroAPI: filed airspeed (kt)
         ac_type: (f.aircraft_type || "").toString().toUpperCase(),
         dist: f.route_distance || null
       };

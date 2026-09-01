@@ -808,7 +808,7 @@ function setReg(v,explicit){
   var h1=document.querySelector('#hdr h1'); if(h1){ h1.innerHTML = (STATIONS&&STATIONS.length>1) ? (lbl+' · '+STATIONS.map(function(s){return s[0];}).join(' → ')) : (lbl+' · live tracking'); }
   resetAdsb();
   var st=document.getElementById('adsb-status'); if(st) st.textContent = v ? (v+': acquiring ADS-B…') : 'Enter a tail # or flight number to track';
-  try{ history.replaceState(null,'',shareURL()); }catch(e){}
+  try{ history.replaceState(null,'',selfURL()); }catch(e){}
   if(v && map.hasLayer(adsbGroup)) fetchADSB();
 }
 // Per-user default pushed by the account widget; only applies if the user hasn't chosen a tail via link or by hand.
@@ -834,6 +834,14 @@ Promise.all([_pwJSON('airports.json'),_pwJSON('navaids.json'),_pwJSON('fixes.jso
   REG=((urlReg||savedReg||'').toUpperCase().replace(/[^A-Z0-9]/g,''));
   var rg=document.getElementById('regin'); if(rg) rg.value=REG;
   if(new URLSearchParams(location.search).get('ac')){ document.body.classList.add('shared'); var lk=document.getElementById('regin'); if(lk){ lk.readOnly=true; lk.title='Tracking '+(REG||'aircraft')+' — locked on shared map'; } startADSB(); }
+  // #4b — default the Winds-Aloft altitude selector to the filed/briefed cruise (owner can still change it).
+  (function(){ var sel=document.getElementById('wind-alt'); if(!sel) return; var alt=null;
+    try{ var a=new URLSearchParams(location.search).get('alt'); if(a) alt=parseFloat(a); }catch(e){}
+    if(!(alt>0)){ try{ var acs=new URLSearchParams(location.search).get('ac')||localStorage.getItem('pw_ac'); if(acs){ var o=JSON.parse(acs); if(o&&o.cruise) alt=parseFloat(o.cruise); } }catch(e){} }
+    if(alt>0){ var ft={'925hPa':3000,'850hPa':5000,'700hPa':10000,'600hPa':14000,'500hPa':18000,'400hPa':24000,'300hPa':30000,'250hPa':34000,'200hPa':39000,'150hPa':45000};
+      var best=null,bd=1e9; for(var i=0;i<sel.options.length;i++){ var f=ft[sel.options[i].value]; if(f==null) continue; var d=Math.abs(f-alt); if(d<bd){bd=d;best=sel.options[i].value;} }
+      if(best) sel.value=best; }
+  })();
   setRouteMsg(Object.keys(AIRPORTS).length.toLocaleString()+' airports · '+Object.keys(DB.fixes).length.toLocaleString()+' fixes · '+Object.keys(DB.airways).length.toLocaleString()+' airways');
   if(initRoute) plotRoute(initRoute);
   resetAdsb(); if(map.hasLayer(adsbGroup)) fetchADSB();
@@ -864,7 +872,7 @@ function plotRoute(text){
   ROUTE={sun:found.map(function(f){return f[0];}), tue:[]};
   ROUTEWPTS=exp.points; ROUTELINE=exp.points.map(function(p){return [p.la,p.lo];});
   try{ localStorage.setItem('pw_route', raw); }catch(e){}
-  try{ var ri2=document.getElementById('routein'); if(ri2) ri2.value=raw; history.replaceState(null,'',shareURL()); }catch(e){}
+  try{ var ri2=document.getElementById('routein'); if(ri2) ri2.value=raw; history.replaceState(null,'',selfURL()); }catch(e){}
   redrawRoute();
   var fb=ROUTELINE.length>1?ROUTELINE:found.map(function(f){return [f[1],f[2]];});
   map.fitBounds(L.latLngBounds(fb),{padding:[70,70],maxZoom:9});
@@ -940,6 +948,17 @@ function buildBriefing(){
 
 // wiring
 document.getElementById('plotbtn').addEventListener('click',function(){ plotRoute(document.getElementById('routein').value); });
+// #4a — Plot is admin-only here; regular users build a route on the Briefing page and arrive with it pre-plotted.
+(function(){ var pb=document.getElementById('plotbtn'); if(!pb) return;
+  var st=document.createElement('style'); st.textContent='#plotbtn:disabled{opacity:.5;cursor:not-allowed}'; document.head.appendChild(st);
+  function applyGate(){ if(window.PW_isAdmin){ pb.disabled=false; pb.title='Plot the entered route'; }
+    else { pb.disabled=true; pb.title='Build routes on the Briefing page — Plot is admin-only here'; } }
+  applyGate();
+  var prev=window.PW_onAdmin;
+  window.PW_onAdmin=function(a){ try{ if(prev) prev(a); }catch(e){} applyGate(); };
+})();
+// #5 — bfcache safety net: if we return to a non-shared URL (no `ac`), never stay in read-only shared mode.
+window.addEventListener('pageshow',function(){ try{ if(!new URLSearchParams(location.search).get('ac')) document.body.classList.remove('shared'); }catch(e){} });
 document.getElementById('routein').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); plotRoute(this.value); } });
 document.getElementById('routein').addEventListener('input',function(){var s=this.selectionStart,e2=this.selectionEnd,u=this.value.toUpperCase();if(u!==this.value){this.value=u;try{this.setSelectionRange(s,e2);}catch(_){}}});
 
@@ -954,6 +973,20 @@ function flightQ(routeStr){
 function shareURL(){
   var rt=(document.getElementById('routein')||{}).value||'';
   return location.origin+location.pathname+'?'+flightQ(rt);
+}
+// Address-bar self-sync: route + tail only. Carries `ac` ONLY when it was already
+// in the URL (a genuine shared map) — never injects the owner's own saved aircraft,
+// so returning here via the browser Back button doesn't flip the page into read-only
+// "shared" mode (which hides the Suite link and route box).
+function selfQ(routeStr){
+  var q=['route='+encodeURIComponent((routeStr||'').trim().toUpperCase())];
+  if(REG) q.push('reg='+encodeURIComponent(REG));
+  try{ var ac=new URLSearchParams(location.search).get('ac'); if(ac) q.push('ac='+encodeURIComponent(ac)); }catch(e){}
+  return q.join('&');
+}
+function selfURL(){
+  var rt=(document.getElementById('routein')||{}).value||'';
+  return location.origin+location.pathname+'?'+selfQ(rt);
 }
 function shareToast(m){ var t=document.getElementById('pw-share-toast'); if(!t){t=document.createElement('div');t.id='pw-share-toast';document.body.appendChild(t);} t.textContent=m; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(function(){t.classList.remove('show');},2600); }
 function shareMap(){
